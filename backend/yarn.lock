@@ -711,6 +711,14 @@
     "@standard-schema/spec" "1.1.0"
     uuid "^10.0.0"
 
+"@langchain/ollama@^1.2.3":
+  version "1.2.3"
+  resolved "https://registry.npmjs.org/@langchain/ollama/-/ollama-1.2.3.tgz#e2e94b1bf67ba0487b58ae0ed3b8b4e6e6c9bea6"
+  integrity sha512-wkXdKVFQWeDOpAv77R8g0/ra4b0EFbTwFw4ot/lrWo/iOZZ3WI82wbbtsjb0yrbAJU4CoUjyLygZft8Szbza6A==
+  dependencies:
+    ollama "^0.6.3"
+    uuid "^10.0.0"
+
 "@ljharb/through@^2.3.12":
   version "2.3.14"
   resolved "https://registry.npmjs.org/@ljharb/through/-/through-2.3.14.tgz#a5df44295f44dc23bfe106af59426dd0677760b1"
@@ -4063,6 +4071,13 @@ object-inspect@^1.13.3:
   resolved "https://registry.npmjs.org/object-inspect/-/object-inspect-1.13.4.tgz#8375265e21bc20d0fa582c22e1b13485d6e00213"
   integrity sha512-W67iLl4J2EXEGTbfeHCffrjDfitvLANg0UlX3wFUUSTx92KXRFegMHUVgSqE+wvhAbi4WqjGg9czysTV2Epbew==
 
+ollama@^0.6.3:
+  version "0.6.3"
+  resolved "https://registry.npmjs.org/ollama/-/ollama-0.6.3.tgz#b188573dd0ccb3b4759c1f8fa85067cb17f6673c"
+  integrity sha512-KEWEhIqE5wtfzEIZbDCLH51VFZ6Z3ZSa6sIOg/E/tBV8S51flyqBOXi+bRxlOYKDf8i327zG9eSTb8IJxvm3Zg==
+  dependencies:
+    whatwg-fetch "^3.6.20"
+
 on-finished@~2.4.1:
   version "2.4.1"
   resolved "https://registry.npmjs.org/on-finished/-/on-finished-2.4.1.tgz#58c8c44116e54845ad57f14ab10b03533184ac3f"
@@ -5418,6 +5433,11 @@ webpack@5.97.1:
     terser-webpack-plugin "^5.3.10"
     watchpack "^2.4.1"
     webpack-sources "^3.2.3"
+
+whatwg-fetch@^3.6.20:
+  version "3.6.20"
+  resolved "https://registry.npmjs.org/whatwg-fetch/-/whatwg-fetch-3.6.20.tgz#580ce6d791facec91d37c72890995a0b48d31c70"
+  integrity sha512-EqhiFU6daOA8kpjOWTL0olhVOF3i7OrFzSYiGsEMB8GcXS+RrzauAERX65xMeNWVqxA6HXH2m69Z9LaKKdisfg==
 
 whatwg-url@^5.0.0:
   version "5.0.0"

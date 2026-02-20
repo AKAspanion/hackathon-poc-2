@@ -1,23 +1,45 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { ChatAnthropic } from '@langchain/anthropic';
+import { ChatOllama } from '@langchain/ollama';
 import { RiskSeverity } from '../database/entities/risk.entity';
 import { OpportunityType } from '../database/entities/opportunity.entity';
 
 @Injectable()
 export class AgentOrchestratorService {
   private readonly logger = new Logger(AgentOrchestratorService.name);
-  private llm: ChatAnthropic;
+  private llm: BaseChatModel | undefined;
 
   constructor() {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (apiKey) {
-      this.llm = new ChatAnthropic({
-        model: 'claude-3-5-sonnet-20241022',
+    const provider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase();
+
+    if (provider === 'ollama') {
+      const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+      const model = process.env.OLLAMA_MODEL || 'llama3';
+      this.llm = new ChatOllama({
+        baseUrl,
+        model,
         temperature: 0.7,
-        apiKey: apiKey,
       });
+      this.logger.log(`[AI agent] Event: LLM provider initialized — Ollama model=${model} baseUrl=${baseUrl}`);
+      this.logger.log(`Using Ollama provider: ${model} at ${baseUrl}`);
     } else {
-      this.logger.warn('ANTHROPIC_API_KEY not set. Using mock analysis.');
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      const model = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022';
+      if (apiKey) {
+        this.llm = new ChatAnthropic({
+          model,
+          temperature: 0.7,
+          apiKey,
+        });
+        this.logger.log(`[AI agent] Event: LLM provider initialized — Anthropic model=${model}`);
+        this.logger.log('Using Anthropic provider');
+      } else {
+        this.logger.warn('[AI agent] Event: No LLM available — ANTHROPIC_API_KEY not set. All analysis will use mock.');
+        this.logger.warn(
+          'LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY not set. Using mock analysis.',
+        );
+      }
     }
   }
 
@@ -25,12 +47,15 @@ export class AgentOrchestratorService {
     risks: any[];
     opportunities: any[];
   }> {
+    this.logger.log('[trigger] analyzeData started');
     const risks: any[] = [];
     const opportunities: any[] = [];
 
-    // Process each data source
     for (const [sourceType, dataArray] of allData.entries()) {
-      for (const dataItem of dataArray) {
+      this.logger.log(`[trigger] Analyzing source "${sourceType}" (${dataArray.length} items)`);
+      for (let i = 0; i < dataArray.length; i++) {
+        const dataItem = dataArray[i];
+        this.logger.log(`[trigger] analyzeDataItem: sourceType=${sourceType} itemIndex=${i}`);
         const analysis = await this.analyzeDataItem(sourceType, dataItem);
 
         if (analysis.risks && analysis.risks.length > 0) {
@@ -41,6 +66,7 @@ export class AgentOrchestratorService {
               sourceData: dataItem,
             })),
           );
+          this.logger.log(`[trigger] analyzeDataItem: extracted ${analysis.risks.length} risk(s) from ${sourceType}[${i}]`);
         }
 
         if (analysis.opportunities && analysis.opportunities.length > 0) {
@@ -51,10 +77,12 @@ export class AgentOrchestratorService {
               sourceData: dataItem,
             })),
           );
+          this.logger.log(`[trigger] analyzeDataItem: extracted ${analysis.opportunities.length} opportunity(ies) from ${sourceType}[${i}]`);
         }
       }
     }
 
+    this.logger.log(`[trigger] analyzeData completed: total risks=${risks.length} opportunities=${opportunities.length}`);
     return { risks, opportunities };
   }
 
@@ -66,12 +94,15 @@ export class AgentOrchestratorService {
     opportunities: any[];
   }> {
     if (!this.llm) {
-      // Mock analysis for development
+      this.logger.log(`[AI agent] Event: analyzeDataItem using mock (no LLM) sourceType=${sourceType}`);
+      this.logger.log(`[trigger] API: analyzeDataItem (mock) sourceType=${sourceType}`);
       return this.mockAnalyzeDataItem(sourceType, dataItem);
     }
 
     try {
       const prompt = this.buildAnalysisPrompt(sourceType, dataItem);
+      this.logger.log(`[AI agent] Call: analyzeDataItem sourceType=${sourceType} promptLength=${prompt.length}`);
+      this.logger.log(`[trigger] API call: LLM invoke (analyzeDataItem) sourceType=${sourceType}`);
       const response = await this.llm.invoke(prompt);
       const content =
         typeof response.content === 'string'
@@ -81,14 +112,23 @@ export class AgentOrchestratorService {
                 .map((c: any) => c.text || JSON.stringify(c))
                 .join('')
             : JSON.stringify(response.content);
+      this.logger.log(
+        `[AI agent] Response: analyzeDataItem sourceType=${sourceType} contentLength=${content.length} content=${content}`,
+      );
+      this.logger.log(`[trigger] API response: LLM analyzeDataItem sourceType=${sourceType}`);
 
       // Parse JSON response
       try {
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          return JSON.parse(jsonMatch[0]);
+          const parsed = JSON.parse(jsonMatch[0]);
+          const riskCount = Array.isArray(parsed.risks) ? parsed.risks.length : 0;
+          const oppCount = Array.isArray(parsed.opportunities) ? parsed.opportunities.length : 0;
+          this.logger.log(`[AI agent] Event: analyzeDataItem parsed successfully risks=${riskCount} opportunities=${oppCount}`);
+          return parsed;
         }
       } catch (e) {
+        this.logger.warn('[AI agent] Event: analyzeDataItem response parse failed, using mock analysis');
         this.logger.warn(
           'Failed to parse LLM response as JSON, using mock analysis',
         );
@@ -96,6 +136,7 @@ export class AgentOrchestratorService {
 
       return this.mockAnalyzeDataItem(sourceType, dataItem);
     } catch (error) {
+      this.logger.error('[AI agent] Error: analyzeDataItem LLM call failed', error);
       this.logger.error('Error in LLM analysis:', error);
       return this.mockAnalyzeDataItem(sourceType, dataItem);
     }
@@ -212,6 +253,8 @@ If no risks or opportunities are found, return empty arrays. Be specific and act
 
   async generateMitigationPlan(risk: any): Promise<any> {
     if (!this.llm) {
+      this.logger.log(`[AI agent] Event: generateMitigationPlan using mock (no LLM) riskId=${risk.id}`);
+      this.logger.log(`[trigger] API: generateMitigationPlan (mock) riskId=${risk.id}`);
       return this.mockGenerateMitigationPlan(risk);
     }
 
@@ -234,6 +277,8 @@ Return ONLY a valid JSON object:
   "dueDate": "YYYY-MM-DD"
 }`;
 
+      this.logger.log(`[AI agent] Call: generateMitigationPlan riskId=${risk.id} title="${risk.title}" promptLength=${prompt.length}`);
+      this.logger.log(`[trigger] API call: LLM invoke (generateMitigationPlan) riskId=${risk.id} title="${risk.title}"`);
       const response = await this.llm.invoke(prompt);
       const content =
         typeof response.content === 'string'
@@ -243,12 +288,19 @@ Return ONLY a valid JSON object:
                 .map((c: any) => c.text || JSON.stringify(c))
                 .join('')
             : JSON.stringify(response.content);
+      this.logger.log(
+        `[AI agent] Response: generateMitigationPlan riskId=${risk.id} contentLength=${content.length} content=${content}`,
+      );
+      this.logger.log(`[trigger] API response: LLM generateMitigationPlan riskId=${risk.id}`);
 
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        const plan = JSON.parse(jsonMatch[0]);
+        this.logger.log(`[AI agent] Event: generateMitigationPlan parsed planTitle="${plan.title || 'n/a'}" actions=${plan.actions?.length ?? 0}`);
+        return plan;
       }
     } catch (error) {
+      this.logger.error('[AI agent] Error: generateMitigationPlan LLM call failed', error);
       this.logger.error('Error generating mitigation plan:', error);
     }
 
@@ -257,6 +309,8 @@ Return ONLY a valid JSON object:
 
   async generateOpportunityPlan(opportunity: any): Promise<any> {
     if (!this.llm) {
+      this.logger.log(`[AI agent] Event: generateOpportunityPlan using mock (no LLM) opportunityId=${opportunity.id}`);
+      this.logger.log(`[trigger] API: generateOpportunityPlan (mock) opportunityId=${opportunity.id}`);
       return this.mockGenerateOpportunityPlan(opportunity);
     }
 
@@ -278,6 +332,8 @@ Return ONLY a valid JSON object:
   "dueDate": "YYYY-MM-DD"
 }`;
 
+      this.logger.log(`[AI agent] Call: generateOpportunityPlan opportunityId=${opportunity.id} title="${opportunity.title}" promptLength=${prompt.length}`);
+      this.logger.log(`[trigger] API call: LLM invoke (generateOpportunityPlan) opportunityId=${opportunity.id} title="${opportunity.title}"`);
       const response = await this.llm.invoke(prompt);
       const content =
         typeof response.content === 'string'
@@ -287,12 +343,19 @@ Return ONLY a valid JSON object:
                 .map((c: any) => c.text || JSON.stringify(c))
                 .join('')
             : JSON.stringify(response.content);
+      this.logger.log(
+        `[AI agent] Response: generateOpportunityPlan opportunityId=${opportunity.id} contentLength=${content.length} content=${content}`,
+      );
+      this.logger.log(`[trigger] API response: LLM generateOpportunityPlan opportunityId=${opportunity.id}`);
 
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        const plan = JSON.parse(jsonMatch[0]);
+        this.logger.log(`[AI agent] Event: generateOpportunityPlan parsed planTitle="${plan.title || 'n/a'}" actions=${plan.actions?.length ?? 0}`);
+        return plan;
       }
     } catch (error) {
+      this.logger.error('[AI agent] Error: generateOpportunityPlan LLM call failed', error);
       this.logger.error('Error generating opportunity plan:', error);
     }
 

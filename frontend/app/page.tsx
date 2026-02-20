@@ -4,6 +4,7 @@ import { AgentStatus } from '@/components/AgentStatus';
 import { RisksList } from '@/components/RisksList';
 import { OpportunitiesList } from '@/components/OpportunitiesList';
 import { MitigationPlansList } from '@/components/MitigationPlansList';
+import { AppNav } from '@/components/AppNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { agentApi } from '@/lib/api';
 
@@ -16,6 +17,7 @@ export default function Home() {
       queryClient.invalidateQueries({ queryKey: ['risks'] });
       queryClient.invalidateQueries({ queryKey: ['opportunities'] });
       queryClient.invalidateQueries({ queryKey: ['mitigation-plans'] });
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
     },
   });
 
@@ -36,13 +38,16 @@ export default function Home() {
                 Global Watchtower for Manufacturing Logistics
               </p>
             </div>
-            <button
-              onClick={handleTriggerAnalysis}
-              disabled={triggerMutation.isPending}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors"
-            >
-              {triggerMutation.isPending ? 'Triggering...' : 'Trigger Analysis'}
-            </button>
+            <div className="flex items-center gap-4">
+              <AppNav />
+              <button
+                onClick={handleTriggerAnalysis}
+                disabled={triggerMutation.isPending}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors"
+              >
+                {triggerMutation.isPending ? 'Triggering...' : 'Trigger Analysis'}
+              </button>
+            </div>
           </div>
         </div>
       </header>

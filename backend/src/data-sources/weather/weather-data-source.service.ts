@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { BaseDataSource } from '../base/base-data-source';
 import {
   DataSourceConfig,
@@ -11,15 +12,47 @@ export class WeatherDataSourceService extends BaseDataSource {
   private apiKey: string;
   private baseUrl = 'https://api.openweathermap.org/data/2.5';
 
+  private readonly placeholderKey = 'your_openweather_api_key_here';
+
+  constructor(private readonly configService: ConfigService) {
+    super();
+  }
+
   protected async onInitialize(config: DataSourceConfig): Promise<void> {
-    this.apiKey = config.apiKey || process.env.WEATHER_API_KEY || '';
+    const raw =
+      config.apiKey ||
+      this.configService.get<string>('WEATHER_API_KEY') ||
+      '';
+    this.apiKey =
+      raw && raw !== this.placeholderKey ? raw : '';
     if (!this.apiKey) {
-      console.warn('Weather API key not configured. Using mock data.');
+      console.warn(
+        'Weather API key not configured. Set WEATHER_API_KEY in .env with a key from https://openweathermap.org/api. Using mock data.',
+      );
     }
   }
 
   getType(): string {
     return 'weather';
+  }
+
+  private getMockResult(city: string): DataSourceResult {
+    return this.createResult({
+      city,
+      country: 'US',
+      temperature: Math.floor(Math.random() * 30) + 10,
+      condition: ['Clear', 'Clouds', 'Rain', 'Storm'][
+        Math.floor(Math.random() * 4)
+      ],
+      description: 'Mock weather data',
+      humidity: Math.floor(Math.random() * 100),
+      windSpeed: Math.random() * 20,
+      visibility: 10000,
+      coordinates: {
+        lat: Math.random() * 180 - 90,
+        lon: Math.random() * 360 - 180,
+      },
+    });
   }
 
   async isAvailable(): Promise<boolean> {
@@ -65,29 +98,18 @@ export class WeatherDataSourceService extends BaseDataSource {
             }),
           );
         } else {
-          // Mock data for development
-          results.push(
-            this.createResult({
-              city,
-              country: 'US',
-              temperature: Math.floor(Math.random() * 30) + 10,
-              condition: ['Clear', 'Clouds', 'Rain', 'Storm'][
-                Math.floor(Math.random() * 4)
-              ],
-              description: 'Mock weather data',
-              humidity: Math.floor(Math.random() * 100),
-              windSpeed: Math.random() * 20,
-              visibility: 10000,
-              coordinates: {
-                lat: Math.random() * 180 - 90,
-                lon: Math.random() * 360 - 180,
-              },
-            }),
+          results.push(this.getMockResult(city));
+        }
+      } catch (error: any) {
+        const is401 = error?.response?.status === 401;
+        if (is401) {
+          results.push(this.getMockResult(city));
+        } else {
+          console.error(
+            `Error fetching weather for ${city}:`,
+            error.message,
           );
         }
-      } catch (error) {
-        console.error(`Error fetching weather for ${city}:`, error.message);
-        // Continue with other cities
       }
     }
 

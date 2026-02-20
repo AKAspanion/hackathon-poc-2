@@ -74,6 +74,26 @@ export interface MitigationPlan {
   updatedAt: string;
 }
 
+export interface SupplierRiskSummary {
+  count: number;
+  bySeverity: Record<string, number>;
+  latest: { id: string; severity: string; title: string } | null;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  location?: string | null;
+  city?: string | null;
+  country?: string | null;
+  region?: string | null;
+  commodities?: string | null;
+  metadata?: Record<string, string> | null;
+  createdAt: string;
+  updatedAt: string;
+  riskSummary: SupplierRiskSummary;
+}
+
 // API functions
 export const agentApi = {
   getStatus: () => api.get<AgentStatus>('/agent/status').then(res => res.data),
@@ -98,4 +118,18 @@ export const mitigationPlansApi = {
   getAll: (params?: { riskId?: string; opportunityId?: string; status?: string }) =>
     api.get<MitigationPlan[]>('/mitigation-plans', { params }).then(res => res.data),
   getById: (id: string) => api.get<MitigationPlan>(`/mitigation-plans/${id}`).then(res => res.data),
+};
+
+export const suppliersApi = {
+  uploadCsv: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api
+      .post<{ created: number; errors: string[] }>('/suppliers/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then(res => res.data);
+  },
+  getAll: () => api.get<Supplier[]>('/suppliers').then(res => res.data),
+  getById: (id: string) => api.get<Supplier | null>(`/suppliers/${id}`).then(res => res.data),
 };

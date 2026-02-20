@@ -10,6 +10,7 @@ import { AgentModule } from './agent/agent.module';
 import { RisksModule } from './risks/risks.module';
 import { OpportunitiesModule } from './opportunities/opportunities.module';
 import { MitigationPlansModule } from './mitigation-plans/mitigation-plans.module';
+import { SuppliersModule } from './suppliers/suppliers.module';
 
 @Module({
   imports: [
@@ -29,7 +30,7 @@ import { MitigationPlansModule } from './mitigation-plans/mitigation-plans.modul
         database: process.env.DB_NAME || 'supply_chain',
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         synchronize: process.env.NODE_ENV !== 'production',
-        logging: process.env.NODE_ENV === 'development',
+        logging: false,
       }),
     }),
     DatabaseModule,
@@ -38,6 +39,7 @@ import { MitigationPlansModule } from './mitigation-plans/mitigation-plans.modul
     RisksModule,
     OpportunitiesModule,
     MitigationPlansModule,
+    SuppliersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

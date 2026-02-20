@@ -63,51 +63,64 @@ export class AgentService implements OnModuleInit {
     }
 
     this.isRunning = true;
-    this.logger.log('Starting monitoring cycle...');
+    this.logger.log('[trigger] Starting monitoring cycle');
 
     try {
+      this.logger.log('[trigger] Status -> MONITORING: Fetching data from all sources');
       await this.updateStatus(
         AgentStatus.MONITORING,
         'Fetching data from all sources',
       );
 
-      // Fetch data from all sources
       const allData = await this.dataSourceManager.fetchAllDataSources();
+      const sourceSummary = Array.from(allData.entries())
+        .map(([k, v]) => `${k}:${v.length}`)
+        .join(', ');
+      this.logger.log(`[trigger] Data fetch complete. Sources: ${sourceSummary}`);
 
+      this.logger.log('[trigger] Status -> ANALYZING: Analyzing data for risks and opportunities');
       await this.updateStatus(
         AgentStatus.ANALYZING,
         'Analyzing data for risks and opportunities',
       );
 
-      // Process data through agent orchestrator
       const analysisResults = await this.agentOrchestrator.analyzeData(allData);
+      this.logger.log(
+        `[trigger] Analysis complete. Risks: ${analysisResults.risks.length}, Opportunities: ${analysisResults.opportunities.length}`,
+      );
 
+      this.logger.log('[trigger] Status -> PROCESSING: Processing analysis results');
       await this.updateStatus(
         AgentStatus.PROCESSING,
         'Processing analysis results',
       );
 
-      // Save risks
       for (const riskData of analysisResults.risks) {
-        await this.saveRisk(riskData);
+        const saved = await this.saveRisk(riskData);
+        this.logger.log(`[trigger] Risk saved: id=${saved.id} title="${saved.title}"`);
       }
+      this.logger.log(`[trigger] Saved ${analysisResults.risks.length} risks`);
 
-      // Save opportunities
       for (const opportunityData of analysisResults.opportunities) {
-        await this.saveOpportunity(opportunityData);
+        const saved = await this.saveOpportunity(opportunityData);
+        this.logger.log(`[trigger] Opportunity saved: id=${saved.id} title="${saved.title}"`);
       }
+      this.logger.log(`[trigger] Saved ${analysisResults.opportunities.length} opportunities`);
 
-      // Generate mitigation plans
       const risks = await this.riskRepository.find({
         where: { status: RiskStatus.DETECTED },
         relations: ['mitigationPlans'],
       });
+      const risksNeedingPlans = risks.filter((r) => r.mitigationPlans.length === 0);
+      this.logger.log(`[trigger] Generating mitigation plans for ${risksNeedingPlans.length} risks (${risks.length} total detected)`);
 
       for (const risk of risks) {
         if (risk.mitigationPlans.length === 0) {
+          this.logger.log(`[trigger] API call: generateMitigationPlan for risk id=${risk.id} title="${risk.title}"`);
           const plan =
             await this.agentOrchestrator.generateMitigationPlan(risk);
-          await this.saveMitigationPlan(plan, risk.id);
+          const savedPlan = await this.saveMitigationPlan(plan, risk.id);
+          this.logger.log(`[trigger] Mitigation plan saved: id=${savedPlan.id} for risk id=${risk.id}`);
         }
       }
 
@@ -115,16 +128,21 @@ export class AgentService implements OnModuleInit {
         where: { status: OpportunityStatus.IDENTIFIED },
         relations: ['mitigationPlans'],
       });
+      const opportunitiesNeedingPlans = opportunities.filter(
+        (o) => o.mitigationPlans.length === 0,
+      );
+      this.logger.log(`[trigger] Generating opportunity plans for ${opportunitiesNeedingPlans.length} opportunities (${opportunities.length} total identified)`);
 
       for (const opportunity of opportunities) {
         if (opportunity.mitigationPlans.length === 0) {
+          this.logger.log(`[trigger] API call: generateOpportunityPlan for opportunity id=${opportunity.id} title="${opportunity.title}"`);
           const plan =
             await this.agentOrchestrator.generateOpportunityPlan(opportunity);
-          await this.saveMitigationPlan(plan, null, opportunity.id);
+          const savedPlan = await this.saveMitigationPlan(plan, null, opportunity.id);
+          this.logger.log(`[trigger] Opportunity plan saved: id=${savedPlan.id} for opportunity id=${opportunity.id}`);
         }
       }
 
-      // Update statistics
       const status = await this.agentStatusRepository.findOne({ where: {} });
       if (status) {
         status.risksDetected = await this.riskRepository.count();
@@ -136,12 +154,15 @@ export class AgentService implements OnModuleInit {
           sourcesProcessed: Array.from(allData.keys()),
         };
         await this.agentStatusRepository.save(status);
+        this.logger.log(
+          `[trigger] Stats updated: risks=${status.risksDetected} opportunities=${status.opportunitiesIdentified} plans=${status.plansGenerated}`,
+        );
       }
 
       await this.updateStatus(AgentStatus.IDLE, 'Monitoring cycle completed');
-      this.logger.log('Monitoring cycle completed successfully');
+      this.logger.log('[trigger] Monitoring cycle completed successfully');
     } catch (error) {
-      this.logger.error('Error in monitoring cycle:', error);
+      this.logger.error('[trigger] Error in monitoring cycle', error);
       await this.updateStatus(AgentStatus.ERROR, `Error: ${error.message}`);
     } finally {
       this.isRunning = false;
@@ -213,6 +234,8 @@ export class AgentService implements OnModuleInit {
   }
 
   async triggerManualAnalysis() {
+    this.logger.log('[trigger] triggerManualAnalysis called');
     await this.monitorAndAnalyze();
+    this.logger.log('[trigger] triggerManualAnalysis finished');
   }
 }

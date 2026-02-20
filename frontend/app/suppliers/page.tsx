@@ -1,9 +1,11 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
 import { suppliersApi, Supplier } from '@/lib/api';
 import { AppNav } from '@/components/AppNav';
+import { useAuth } from '@/lib/auth-context';
 import { formatDistanceToNow } from 'date-fns';
 
 const severityBadgeClasses: Record<string, string> = {
@@ -49,11 +51,25 @@ function RiskSummaryCell({ supplier }: { supplier: Supplier }) {
   );
 }
 
-export default function DashboardPage() {
+export default function SuppliersPage() {
+  const router = useRouter();
+  const { isLoggedIn, hydrated } = useAuth();
+
+  useEffect(() => {
+    if (hydrated && !isLoggedIn) {
+      router.replace('/login');
+    }
+  }, [hydrated, isLoggedIn, router]);
+
   const { data: suppliers, isLoading } = useQuery({
     queryKey: ['suppliers'],
     queryFn: () => suppliersApi.getAll(),
+    enabled: hydrated && isLoggedIn === true,
   });
+
+  if (!hydrated || !isLoggedIn) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -62,7 +78,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                Suppliers Dashboard
+                Suppliers
               </h1>
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 All suppliers and AI-generated risk data
@@ -74,16 +90,10 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6">
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Risk data is correlated by the Supervisor and SupplierCorrelate agents from weather, news, and other sources.
           </p>
-          <Link
-            href="/onboarding"
-            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
-          >
-            Add suppliers
-          </Link>
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
@@ -97,15 +107,9 @@ export default function DashboardPage() {
             </div>
           ) : !suppliers || suppliers.length === 0 ? (
             <div className="p-12 text-center">
-              <p className="text-gray-500 dark:text-gray-400 mb-4">
-                No suppliers yet. Upload a CSV during onboarding to get started.
+              <p className="text-gray-500 dark:text-gray-400">
+                No suppliers yet.
               </p>
-              <Link
-                href="/onboarding"
-                className="inline-flex px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
-              >
-                Go to Onboarding
-              </Link>
             </div>
           ) : (
             <div className="overflow-x-auto">

@@ -4,12 +4,22 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
+import { Oem } from './oem.entity';
 
 @Entity('suppliers')
 export class Supplier {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  oemId: string | null;
+
+  @ManyToOne(() => Oem, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'oemId' })
+  oem?: Oem;
 
   @Column()
   name: string;

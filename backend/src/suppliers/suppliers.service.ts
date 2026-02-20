@@ -47,7 +47,11 @@ export class SuppliersService {
     private riskRepository: Repository<Risk>,
   ) {}
 
-  async uploadCsv(buffer: Buffer, filename: string): Promise<{ created: number; errors: string[] }> {
+  async uploadCsv(
+    oemId: string,
+    buffer: Buffer,
+    filename: string,
+  ): Promise<{ created: number; errors: string[] }> {
     const text = buffer.toString('utf-8');
     const lines = text.split(/\r?\n/).filter((line) => line.trim());
     if (lines.length < 2) {
@@ -110,6 +114,7 @@ export class SuppliersService {
       try {
         await this.supplierRepository.save(
           this.supplierRepository.create({
+            oemId,
             name,
             location: location ?? undefined,
             city: city ?? undefined,
@@ -128,14 +133,15 @@ export class SuppliersService {
     return { created, errors };
   }
 
-  async findAll(): Promise<Supplier[]> {
+  async findAll(oemId: string): Promise<Supplier[]> {
     return this.supplierRepository.find({
+      where: { oemId },
       order: { createdAt: 'DESC' },
     });
   }
 
-  async findOne(id: string): Promise<Supplier | null> {
-    return this.supplierRepository.findOne({ where: { id } });
+  async findOne(id: string, oemId: string): Promise<Supplier | null> {
+    return this.supplierRepository.findOne({ where: { id, oemId } });
   }
 
   /** Get risk summary per supplier (by affectedSupplier matching supplier name) */

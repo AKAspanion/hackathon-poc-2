@@ -9,6 +9,30 @@ export const api = axios.create({
   },
 });
 
+export function setAuthToken(token: string | null) {
+  if (token) {
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+  } else {
+    delete api.defaults.headers.common['Authorization'];
+  }
+}
+
+/** Call when backend returns 401 so auth state is cleared globally */
+export const AUTH_UNAUTHORIZED_EVENT = 'auth:unauthorized';
+
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err?.response?.status === 401 && typeof window !== 'undefined') {
+      setAuthToken(null);
+      localStorage.removeItem('oem_token');
+      localStorage.removeItem('oem_user');
+      window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
+    }
+    return Promise.reject(err);
+  },
+);
+
 // Types
 export interface AgentStatus {
   id: string;
@@ -80,6 +104,14 @@ export interface SupplierRiskSummary {
   latest: { id: string; severity: string; title: string } | null;
 }
 
+export interface Oem {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Supplier {
   id: string;
   name: string;
@@ -118,6 +150,17 @@ export const mitigationPlansApi = {
   getAll: (params?: { riskId?: string; opportunityId?: string; status?: string }) =>
     api.get<MitigationPlan[]>('/mitigation-plans', { params }).then(res => res.data),
   getById: (id: string) => api.get<MitigationPlan>(`/mitigation-plans/${id}`).then(res => res.data),
+};
+
+export const oemsApi = {
+  register: (name: string, email: string) =>
+    api
+      .post<{ oem: Oem; token: string }>('/oems/register', { name, email })
+      .then(res => res.data),
+  login: (email: string) =>
+    api
+      .post<{ oem: Oem; token: string }>('/oems/login', { email })
+      .then(res => res.data),
 };
 
 export const suppliersApi = {

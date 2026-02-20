@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -11,6 +12,8 @@ import { RisksModule } from './risks/risks.module';
 import { OpportunitiesModule } from './opportunities/opportunities.module';
 import { MitigationPlansModule } from './mitigation-plans/mitigation-plans.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
+import { OemsModule } from './oems/oems.module';
+import { GlobalJwtAuthGuard } from './oems/global-jwt-auth.guard';
 
 @Module({
   imports: [
@@ -39,9 +42,13 @@ import { SuppliersModule } from './suppliers/suppliers.module';
     RisksModule,
     OpportunitiesModule,
     MitigationPlansModule,
+    OemsModule,
     SuppliersModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: GlobalJwtAuthGuard },
+  ],
 })
 export class AppModule {}

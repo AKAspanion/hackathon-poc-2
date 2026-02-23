@@ -1,0 +1,76 @@
+from uuid import UUID
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+
+from app.database import get_db
+from app.api.deps import get_current_oem
+from app.models.oem import Oem
+from app.services.agent_service import (
+    get_status,
+    get_latest_risk_score,
+    trigger_manual_analysis_sync,
+    _ensure_agent_status,
+)
+from app.models.agent_status import AgentStatusEntity
+
+router = APIRouter(prefix="/agent", tags=["agent"])
+
+
+class TriggerBody(BaseModel):
+    oemId: UUID | None = None
+
+
+@router.get("/status")
+def agent_status(db: Session = Depends(get_db), _: Oem = Depends(get_current_oem)):
+    status = get_status(db)
+    if not status:
+        _ensure_agent_status(db)
+        status = get_status(db)
+    if not status:
+        return {"status": "idle", "currentTask": None}
+    return {
+        "id": str(status.id),
+        "status": status.status,
+        "currentTask": status.currentTask,
+        "lastProcessedData": status.lastProcessedData,
+        "lastDataSource": status.lastDataSource,
+        "errorMessage": status.errorMessage,
+        "risksDetected": status.risksDetected,
+        "opportunitiesIdentified": status.opportunitiesIdentified,
+        "plansGenerated": status.plansGenerated,
+        "lastUpdated": status.lastUpdated.isoformat() if status.lastUpdated else None,
+        "createdAt": status.createdAt.isoformat() if status.createdAt else None,
+    }
+
+
+@router.get("/risk-score")
+def risk_score(
+    oem: Oem = Depends(get_current_oem),
+    oemId: UUID | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    oid = oemId or oem.id
+    score = get_latest_risk_score(db, oid)
+    if not score:
+        return {"message": "No risk score computed yet for this OEM."}
+    return {
+        "id": str(score.id),
+        "oemId": str(score.oemId),
+        "overallScore": float(score.overallScore),
+        "breakdown": score.breakdown,
+        "severityCounts": score.severityCounts,
+        "riskIds": score.riskIds.split(",") if score.riskIds else [],
+        "createdAt": score.createdAt.isoformat() if score.createdAt else None,
+    }
+
+
+@router.post("/trigger")
+def trigger_analysis(
+    body: TriggerBody | None = None,
+    oem: Oem = Depends(get_current_oem),
+    db: Session = Depends(get_db),
+):
+    oem_id = (body.oemId if body else None) or oem.id
+    trigger_manual_analysis_sync(db, oem_id)
+    return {"message": "Analysis triggered successfully", "oemId": str(oem_id)}

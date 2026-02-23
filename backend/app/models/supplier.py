@@ -1,0 +1,25 @@
+import uuid
+from sqlalchemy import Column, String, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+from app.database import Base
+
+
+class Supplier(Base):
+    __tablename__ = "suppliers"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    oemId = Column(UUID(as_uuid=True), ForeignKey("oems.id", ondelete="CASCADE"), nullable=True)
+    name = Column(String, nullable=False)
+    location = Column(String, nullable=True)
+    city = Column(String, nullable=True)
+    country = Column(String, nullable=True)
+    region = Column(String, nullable=True)
+    commodities = Column(String, nullable=True)
+    metadata_ = Column("metadata", JSONB, nullable=True)
+    createdAt = Column(DateTime(timezone=True), server_default=func.now())
+    updatedAt = Column(DateTime(timezone=True), onupdate=func.now())
+
+    oem = relationship("Oem", backref="suppliers")

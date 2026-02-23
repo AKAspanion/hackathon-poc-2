@@ -1,0 +1,46 @@
+import uuid
+import enum
+from sqlalchemy import Column, String, Text, DateTime, Numeric, Enum
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+from app.database import Base
+
+
+class OpportunityType(str, enum.Enum):
+    COST_SAVING = "cost_saving"
+    TIME_SAVING = "time_saving"
+    QUALITY_IMPROVEMENT = "quality_improvement"
+    MARKET_EXPANSION = "market_expansion"
+    SUPPLIER_DIVERSIFICATION = "supplier_diversification"
+
+
+class OpportunityStatus(str, enum.Enum):
+    IDENTIFIED = "identified"
+    EVALUATING = "evaluating"
+    IMPLEMENTING = "implementing"
+    REALIZED = "realized"
+    EXPIRED = "expired"
+
+
+class Opportunity(Base):
+    __tablename__ = "opportunities"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    type = Column(Enum(OpportunityType), nullable=False)
+    status = Column(Enum(OpportunityStatus), default=OpportunityStatus.IDENTIFIED)
+    sourceType = Column(String, nullable=False)
+    sourceData = Column(JSONB, nullable=True)
+    affectedRegion = Column(String, nullable=True)
+    potentialBenefit = Column(String, nullable=True)
+    estimatedValue = Column(Numeric(10, 2), nullable=True)
+    oemId = Column(UUID(as_uuid=True), nullable=True)
+    createdAt = Column(DateTime(timezone=True), server_default=func.now())
+    updatedAt = Column(DateTime(timezone=True), onupdate=func.now())
+
+    mitigation_plans = relationship(
+        "MitigationPlan", back_populates="opportunity", cascade="all, delete-orphan"
+    )

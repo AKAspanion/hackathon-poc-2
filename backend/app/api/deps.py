@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.oem import Oem
-from app.services.oems import get_oem_by_id
 
 security = HTTPBearer(auto_error=False)
 
@@ -48,6 +47,7 @@ async def get_current_oem(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing token",
         )
+    from app.services.oems import get_oem_by_id
     oem = get_oem_by_id(db, UUID(oem_id))
     if not oem:
         raise HTTPException(

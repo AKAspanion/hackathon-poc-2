@@ -8,13 +8,13 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.config import settings
 from app.api.routes import app_routes, oems, risks, opportunities, mitigation_plans, suppliers, agent
 from app.services.agent_service import run_scheduled_cycle
+from app.database import Base, engine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Ensure DB tables exist (match existing TypeORM schema - we don't create, just connect)
-# If you want FastAPI to create tables in a new DB, uncomment:
-# Base.metadata.create_all(bind=engine)
+# Ensure DB tables exist for SQLAlchemy models
+Base.metadata.create_all(bind=engine)
 
 
 def scheduled_job():

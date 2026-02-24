@@ -297,6 +297,10 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
             _update_status(db, AgentStatus.IDLE.value, "Monitoring cycle completed")
     except Exception as e:
         logger.exception("Error in analysis: %s", e)
+        try:
+            db.rollback()
+        except Exception:
+            pass
         _update_status(db, AgentStatus.ERROR.value, f"Error: {e}")
     finally:
         _is_running = False

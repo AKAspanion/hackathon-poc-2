@@ -30,8 +30,22 @@ class Opportunity(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=False)
-    type = Column(Enum(OpportunityType), nullable=False)
-    status = Column(Enum(OpportunityStatus), default=OpportunityStatus.IDENTIFIED)
+    type = Column(
+        Enum(
+            OpportunityType,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            name="opportunities_type_enum",
+        ),
+        nullable=False,
+    )
+    status = Column(
+        Enum(
+            OpportunityStatus,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            name="opportunities_status_enum",
+        ),
+        default=OpportunityStatus.IDENTIFIED,
+    )
     sourceType = Column(String, nullable=False)
     sourceData = Column(JSONB, nullable=True)
     affectedRegion = Column(String, nullable=True)
@@ -39,7 +53,12 @@ class Opportunity(Base):
     estimatedValue = Column(Numeric(10, 2), nullable=True)
     oemId = Column(UUID(as_uuid=True), nullable=True)
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
-    updatedAt = Column(DateTime(timezone=True), onupdate=func.now())
+    updatedAt = Column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     mitigation_plans = relationship(
         "MitigationPlan", back_populates="opportunity", cascade="all, delete-orphan"

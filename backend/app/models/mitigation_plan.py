@@ -23,14 +23,26 @@ class MitigationPlan(Base):
     title = Column(String, nullable=False)
     description = Column(Text, nullable=False)
     actions = Column(ARRAY(Text), nullable=False)
-    status = Column(Enum(PlanStatus), default=PlanStatus.DRAFT)
+    status = Column(
+        Enum(
+            PlanStatus,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            name="mitigation_plans_status_enum",
+        ),
+        default=PlanStatus.DRAFT,
+    )
     riskId = Column(UUID(as_uuid=True), ForeignKey("risks.id"), nullable=True)
     opportunityId = Column(UUID(as_uuid=True), ForeignKey("opportunities.id"), nullable=True)
     metadata_ = Column("metadata", JSONB, nullable=True)
     assignedTo = Column(String, nullable=True)
     dueDate = Column(Date, nullable=True)
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
-    updatedAt = Column(DateTime(timezone=True), onupdate=func.now())
+    updatedAt = Column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     risk = relationship("Risk", back_populates="mitigation_plans")
     opportunity = relationship("Opportunity", back_populates="mitigation_plans")

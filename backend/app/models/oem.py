@@ -13,4 +13,9 @@ class Oem(Base):
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False)
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
-    updatedAt = Column(DateTime(timezone=True), onupdate=func.now())
+    updatedAt = Column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

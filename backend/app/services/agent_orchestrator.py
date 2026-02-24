@@ -1,9 +1,15 @@
 import json
 import logging
 import re
+import time
+import uuid
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.config import settings
+from app.database import SessionLocal
+from app.models.llm_log import LlmLog
 from app.models.risk import RiskSeverity
 from app.models.opportunity import OpportunityType
 from app.services.agent_types import OemScope
@@ -12,6 +18,101 @@ logger = logging.getLogger(__name__)
 
 # LLM abstraction: we use Anthropic or Ollama via simple invoke(text) -> str
 _invoke_fn: Any = None
+_LLM_LOG_MAX_CHARS = 4000
+
+
+def _persist_llm_log(
+    call_id: str,
+    provider: str,
+    model: str,
+    prompt: str,
+    response: str | None,
+    status: str,
+    elapsed_ms: int | None,
+    error_message: str | None,
+) -> None:
+    try:
+        db = SessionLocal()
+        try:
+            row = LlmLog(
+                callId=call_id,
+                provider=provider,
+                model=model,
+                prompt=prompt,
+                response=response,
+                status=status,
+                elapsedMs=elapsed_ms,
+                errorMessage=error_message,
+            )
+            db.add(row)
+            db.commit()
+        finally:
+            db.close()
+    except SQLAlchemyError:
+        logger.exception("Failed to persist LLM log to database")
+
+
+def _wrap_llm_invoke(base_invoke, provider: str, model: str):
+    async def _logged_invoke(prompt: str) -> str:
+        call_id = uuid.uuid4().hex[:8]
+        prompt_value = prompt or ""
+        prompt_preview = prompt_value[:_LLM_LOG_MAX_CHARS]
+        logger.info(
+            "LLM request id=%s provider=%s model=%s prompt_len=%d prompt_preview=%s",
+            call_id,
+            provider,
+            model,
+            len(prompt_value),
+            prompt_preview,
+        )
+        start = time.perf_counter()
+        try:
+            response = await base_invoke(prompt)
+        except Exception as exc:
+            elapsed_ms = int((time.perf_counter() - start) * 1000)
+            logger.exception(
+                "LLM error id=%s provider=%s model=%s elapsed_ms=%d",
+                call_id,
+                provider,
+                model,
+                elapsed_ms,
+            )
+            _persist_llm_log(
+                call_id=call_id,
+                provider=provider,
+                model=model,
+                prompt=prompt_value,
+                response=None,
+                status="error",
+                elapsed_ms=elapsed_ms,
+                error_message=str(exc),
+            )
+            raise
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+        response_value = response or ""
+        response_preview = response_value[:_LLM_LOG_MAX_CHARS]
+        logger.info(
+            "LLM response id=%s provider=%s model=%s elapsed_ms=%d response_len=%d response_preview=%s",
+            call_id,
+            provider,
+            model,
+            elapsed_ms,
+            len(response_value),
+            response_preview,
+        )
+        _persist_llm_log(
+            call_id=call_id,
+            provider=provider,
+            model=model,
+            prompt=prompt_value,
+            response=response_value,
+            status="success",
+            elapsed_ms=elapsed_ms,
+            error_message=None,
+        )
+        return response
+
+    return _logged_invoke
 
 
 def _get_llm_invoke():
@@ -35,7 +136,7 @@ def _get_llm_invoke():
                     raise RuntimeError(f"Ollama error: {r.text}")
                 return (r.json().get("response") or "")
 
-        _invoke_fn = _ollama_invoke
+        _invoke_fn = _wrap_llm_invoke(_ollama_invoke, "ollama", model)
         logger.info("LLM provider initialized: Ollama model=%s baseUrl=%s", model, base_url)
     else:
         if settings.anthropic_api_key:
@@ -51,7 +152,7 @@ def _get_llm_invoke():
                 )
                 return (msg.content[0].text if msg.content else "")
 
-            _invoke_fn = _anthropic_invoke
+            _invoke_fn = _wrap_llm_invoke(_anthropic_invoke, "anthropic", model)
             logger.info("LLM provider initialized: Anthropic model=%s", model)
         else:
             logger.warning("ANTHROPIC_API_KEY not set. Using mock analysis.")

@@ -20,6 +20,11 @@ class Supplier(Base):
     commodities = Column(String, nullable=True)
     metadata_ = Column("metadata", JSONB, nullable=True)
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
-    updatedAt = Column(DateTime(timezone=True), onupdate=func.now())
+    updatedAt = Column(
+        DateTime(timezone=True),
+        default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
 
     oem = relationship("Oem", backref="suppliers")

@@ -5,7 +5,13 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.api.deps import get_current_oem
 from app.models.oem import Oem
-from app.services.suppliers import get_all, get_one, upload_csv, get_risks_by_supplier
+from app.services.suppliers import (
+    get_all,
+    get_one,
+    upload_csv,
+    get_risks_by_supplier,
+    get_swarm_summaries_by_supplier,
+)
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 
@@ -29,6 +35,7 @@ def list_suppliers(
 ):
     suppliers = get_all(db, oem.id)
     risk_map = get_risks_by_supplier(db)
+    swarm_map = get_swarm_summaries_by_supplier(db, oem.id)
     return [
         {
             **{
@@ -44,7 +51,12 @@ def list_suppliers(
                 "createdAt": s.createdAt.isoformat() if s.createdAt else None,
                 "updatedAt": s.updatedAt.isoformat() if s.updatedAt else None,
             },
-            "riskSummary": risk_map.get(s.name, {"count": 0, "bySeverity": {}, "latest": None}),
+            "riskSummary": risk_map.get(
+                s.name,
+                {"count": 0, "bySeverity": {}, "latest": None},
+            ),
+            # Swarm Controller style per-supplier output derived from existing risks
+            "swarm": swarm_map.get(s.name),
         }
         for s in suppliers
     ]
@@ -60,6 +72,7 @@ def get_supplier_by_id(
     if not supplier:
         return None
     risk_map = get_risks_by_supplier(db)
+    swarm_map = get_swarm_summaries_by_supplier(db, oem.id)
     return {
         **{
             "id": str(supplier.id),
@@ -74,5 +87,9 @@ def get_supplier_by_id(
             "createdAt": supplier.createdAt.isoformat() if supplier.createdAt else None,
             "updatedAt": supplier.updatedAt.isoformat() if supplier.updatedAt else None,
         },
-        "riskSummary": risk_map.get(supplier.name, {"count": 0, "bySeverity": {}, "latest": None}),
+        "riskSummary": risk_map.get(
+            supplier.name,
+            {"count": 0, "bySeverity": {}, "latest": None},
+        ),
+        "swarm": swarm_map.get(supplier.name),
     }

@@ -22,13 +22,28 @@ class TriggerBody(BaseModel):
 
 
 @router.get("/status")
-def agent_status(db: Session = Depends(get_db), _: Oem = Depends(get_current_oem)):
+def agent_status(
+    db: Session = Depends(get_db),
+    oem: Oem = Depends(get_current_oem),
+    oemId: UUID | None = Query(None),
+):
     status = get_status(db)
     if not status:
         _ensure_agent_status(db)
         status = get_status(db)
+    oid = oemId or oem.id
+    risk_score_ent = get_latest_risk_score(db, oid)
+    risk_score = (
+        float(risk_score_ent.overallScore)
+        if risk_score_ent and risk_score_ent.overallScore is not None
+        else None
+    )
     if not status:
-        return {"status": "idle", "currentTask": None}
+        return {
+            "status": "idle",
+            "currentTask": None,
+            "riskScore": risk_score,
+        }
     return {
         "id": str(status.id),
         "status": status.status,
@@ -39,6 +54,7 @@ def agent_status(db: Session = Depends(get_db), _: Oem = Depends(get_current_oem
         "risksDetected": status.risksDetected,
         "opportunitiesIdentified": status.opportunitiesIdentified,
         "plansGenerated": status.plansGenerated,
+        "riskScore": risk_score,
         "lastUpdated": status.lastUpdated.isoformat() if status.lastUpdated else None,
         "createdAt": status.createdAt.isoformat() if status.createdAt else None,
     }
@@ -50,10 +66,11 @@ def risk_score(
     oemId: UUID | None = Query(None),
     db: Session = Depends(get_db),
 ):
+    """Latest risk score for the OEM (0–100). Computed after each analysis run."""
     oid = oemId or oem.id
     score = get_latest_risk_score(db, oid)
     if not score:
-        return {"message": "No risk score computed yet for this OEM."}
+        return {"message": "No risk score computed yet for this OEM.", "overallScore": None}
     return {
         "id": str(score.id),
         "oemId": str(score.oemId),

@@ -1,4 +1,5 @@
 from uuid import UUID
+from decimal import Decimal, InvalidOperation
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
@@ -65,6 +66,24 @@ def _parse_severity(v) -> RiskSeverity:
     return RiskSeverity.MEDIUM
 
 
+_MAX_NUMERIC = Decimal("99999999.99")
+
+
+def _sanitize_numeric(value) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        num = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    # Enforce column constraint: precision 10, scale 2 -> abs(value) < 1e8
+    if num > _MAX_NUMERIC:
+        return _MAX_NUMERIC
+    if num < -_MAX_NUMERIC:
+        return -_MAX_NUMERIC
+    return num
+
+
 def create_risk_from_dict(db: Session, data: dict) -> Risk:
     risk = Risk(
         title=data["title"],
@@ -76,7 +95,7 @@ def create_risk_from_dict(db: Session, data: dict) -> Risk:
         affectedRegion=data.get("affectedRegion"),
         affectedSupplier=data.get("affectedSupplier"),
         estimatedImpact=data.get("estimatedImpact"),
-        estimatedCost=data.get("estimatedCost"),
+        estimatedCost=_sanitize_numeric(data.get("estimatedCost")),
         oemId=data.get("oemId"),
     )
     db.add(risk)

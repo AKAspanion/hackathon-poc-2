@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { suppliersApi, Supplier } from '@/lib/api';
+import { suppliersApi, Supplier, SupplierSwarmSummary } from '@/lib/api';
 import { AppNav } from '@/components/AppNav';
 import { useAuth } from '@/lib/auth-context';
 import { formatDistanceToNow } from 'date-fns';
@@ -13,6 +13,13 @@ const severityBadgeClasses: Record<string, string> = {
   medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
   high: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
   critical: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
+};
+
+const swarmLevelBadgeClasses: Record<string, string> = {
+  LOW: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  MEDIUM: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+  HIGH: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
+  CRITICAL: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
 };
 
 function RiskSummaryCell({ supplier }: { supplier: Supplier }) {
@@ -43,8 +50,41 @@ function RiskSummaryCell({ supplier }: { supplier: Supplier }) {
         ))}
       </div>
       {riskSummary.latest && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate max-w-[200px]" title={riskSummary.latest.title}>
+        <p
+          className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate max-w-[220px]"
+          title={riskSummary.latest.title}
+        >
           Latest: {riskSummary.latest.title}
+        </p>
+      )}
+      <SwarmSummary swarm={supplier.swarm ?? null} />
+    </div>
+  );
+}
+
+function SwarmSummary({ swarm }: { swarm: SupplierSwarmSummary | null }) {
+  if (!swarm) {
+    return null;
+  }
+
+  const primaryAgent = swarm.agents.find((a) => a.riskLevel === swarm.riskLevel) ?? swarm.agents[0];
+
+  return (
+    <div className="mt-2 space-y-1">
+      <div className="flex items-center gap-2">
+        <span
+          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${swarmLevelBadgeClasses[swarm.riskLevel] ?? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}
+        >
+          Swarm risk: {swarm.riskLevel}
+        </span>
+        <span className="text-xs text-gray-600 dark:text-gray-400">
+          Score: {swarm.finalScore}
+        </span>
+      </div>
+      {primaryAgent && (
+        <p className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[260px]">
+          Dominant driver: {primaryAgent.agentType}
+          {swarm.topDrivers && swarm.topDrivers.length > 0 ? ` — ${swarm.topDrivers[0]}` : ''}
         </p>
       )}
     </div>

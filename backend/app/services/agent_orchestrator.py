@@ -56,14 +56,12 @@ def _wrap_llm_invoke(base_invoke, provider: str, model: str):
     async def _logged_invoke(prompt: str) -> str:
         call_id = uuid.uuid4().hex[:8]
         prompt_value = prompt or ""
-        prompt_preview = prompt_value[:_LLM_LOG_MAX_CHARS]
         logger.info(
-            "LLM request id=%s provider=%s model=%s prompt_len=%d prompt_preview=%s",
+            "LLM request id=%s provider=%s model=%s prompt_len=%d",
             call_id,
             provider,
             model,
             len(prompt_value),
-            prompt_preview,
         )
         start = time.perf_counter()
         try:
@@ -90,15 +88,13 @@ def _wrap_llm_invoke(base_invoke, provider: str, model: str):
             raise
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         response_value = response or ""
-        response_preview = response_value[:_LLM_LOG_MAX_CHARS]
         logger.info(
-            "LLM response id=%s provider=%s model=%s elapsed_ms=%d response_len=%d response_preview=%s",
+            "LLM response id=%s provider=%s model=%s elapsed_ms=%d resp_len=%d",
             call_id,
             provider,
             model,
             elapsed_ms,
             len(response_value),
-            response_preview,
         )
         _persist_llm_log(
             call_id=call_id,
@@ -122,6 +118,7 @@ def _get_llm_invoke():
     provider = (settings.llm_provider or "anthropic").lower()
     if provider == "ollama":
         import httpx
+
         base_url = settings.ollama_base_url or "http://localhost:11434"
         model = settings.ollama_model or "llama3"
 
@@ -134,13 +131,16 @@ def _get_llm_invoke():
                 )
                 if r.status_code != 200:
                     raise RuntimeError(f"Ollama error: {r.text}")
-                return (r.json().get("response") or "")
+                return r.json().get("response") or ""
 
         _invoke_fn = _wrap_llm_invoke(_ollama_invoke, "ollama", model)
-        logger.info("LLM provider initialized: Ollama model=%s baseUrl=%s", model, base_url)
+        logger.info(
+            "LLM provider initialized: Ollama model=%s baseUrl=%s", model, base_url
+        )
     else:
         if settings.anthropic_api_key:
             from anthropic import AsyncAnthropic
+
             client = AsyncAnthropic(api_key=settings.anthropic_api_key)
             model = settings.anthropic_model or "claude-3-5-sonnet-20241022"
 
@@ -150,24 +150,113 @@ def _get_llm_invoke():
                     max_tokens=1024,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                return (msg.content[0].text if msg.content else "")
+                return msg.content[0].text if msg.content else ""
 
             _invoke_fn = _wrap_llm_invoke(_anthropic_invoke, "anthropic", model)
             logger.info("LLM provider initialized: Anthropic model=%s", model)
         else:
-            logger.warning("ANTHROPIC_API_KEY not set. Using mock analysis.")
+            logger.error("ANTHROPIC_API_KEY not set and provider is anthropic; no LLM will be used.")
             _invoke_fn = None
     return _invoke_fn
 
 
 def _extract_json(text: str) -> dict | None:
-    m = re.search(r"\{[\s\S]*\}", text)
+    """
+    Best-effort extraction of a JSON object from an LLM response.
+
+    Handles cases where the model wraps JSON in markdown fences or
+    adds explanatory prose before/after the JSON block.
+    """
+    if not text:
+        return None
+
+    # Strip markdown-style code fences to reduce noise.
+    cleaned = re.sub(r"```[a-zA-Z]*", "", text)
+    cleaned = cleaned.replace("```", "")
+
+    m = re.search(r"\{[\s\S]*\}", cleaned)
     if m:
+        snippet = m.group(0)
         try:
-            return json.loads(m.group(0))
+            return json.loads(snippet)
         except json.JSONDecodeError:
             pass
     return None
+
+
+def _normalize_analysis(parsed: dict | None) -> dict:
+    """
+    Normalize raw parsed analysis into a safe structure:
+    - Always returns dict with 'risks' and 'opportunities' lists.
+    - Drops entries without at least a title and description.
+    - Normalizes severity and type fields to known enum values.
+    """
+    risks: list[dict] = []
+    opportunities: list[dict] = []
+    dropped_risks = 0
+    dropped_opps = 0
+
+    if isinstance(parsed, dict):
+        raw_risks = parsed.get("risks") or []
+        raw_opps = parsed.get("opportunities") or []
+
+        if isinstance(raw_risks, list):
+            for item in raw_risks:
+                if not isinstance(item, dict):
+                    dropped_risks += 1
+                    continue
+                title = (item.get("title") or "").strip()
+                desc = (item.get("description") or "").strip()
+                if not title or not desc:
+                    dropped_risks += 1
+                    continue
+                sev = item.get("severity") or RiskSeverity.MEDIUM.value
+                if isinstance(sev, RiskSeverity):
+                    item["severity"] = sev.value
+                elif isinstance(sev, str):
+                    try:
+                        item["severity"] = RiskSeverity(sev.lower()).value
+                    except ValueError:
+                        item["severity"] = RiskSeverity.MEDIUM.value
+                else:
+                    item["severity"] = RiskSeverity.MEDIUM.value
+                risks.append(item)
+
+        if isinstance(raw_opps, list):
+            for item in raw_opps:
+                if not isinstance(item, dict):
+                    dropped_opps += 1
+                    continue
+                title = (item.get("title") or "").strip()
+                desc = (item.get("description") or "").strip()
+                if not title or not desc:
+                    dropped_opps += 1
+                    continue
+                t = item.get("type") or OpportunityType.COST_SAVING.value
+                if isinstance(t, OpportunityType):
+                    item["type"] = t.value
+                elif isinstance(t, str):
+                    try:
+                        item["type"] = OpportunityType(t.lower()).value
+                    except ValueError:
+                        item["type"] = OpportunityType.COST_SAVING.value
+                else:
+                    item["type"] = OpportunityType.COST_SAVING.value
+                opportunities.append(item)
+
+    if dropped_risks or dropped_opps:
+        logger.info(
+            "normalize_analysis: dropped malformed items "
+            "(risks=%d, opportunities=%d)",
+            dropped_risks,
+            dropped_opps,
+        )
+    logger.info(
+        "normalize_analysis: %d risks, %d opportunities after cleaning",
+        len(risks),
+        len(opportunities),
+    )
+    return {"risks": risks, "opportunities": opportunities}
 
 
 async def analyze_data(
@@ -176,33 +265,82 @@ async def analyze_data(
     risks = []
     opportunities = []
     invoke = _get_llm_invoke()
+    logger.info(
+        "analyze_data: starting for %d source types (scope_oem=%s)",
+        len(all_data),
+        getattr(scope, "get", lambda *_: None)("oemName") if scope else None,
+    )
     for source_type, data_array in all_data.items():
-        for i, data_item in enumerate(data_array):
-            payload = data_item.get("data") if isinstance(data_item, dict) else data_item
+        logger.info(
+            "analyze_data: source=%s items=%d",
+            source_type,
+            len(data_array),
+        )
+        if not data_array:
+            continue
+
+        # Combine all raw items for this source type into a single payload so we
+        # only need ONE LLM call per (OEM, source_type) instead of per item.
+        combined_items: list[dict] = []
+        for data_item in data_array:
+            payload = (
+                data_item.get("data") if isinstance(data_item, dict) else data_item
+            )
             if not payload:
                 payload = data_item
-            analysis = await _analyze_data_item(
-                source_type, payload, scope, invoke
-            )
-            if analysis.get("risks"):
-                for r in analysis["risks"]:
-                    r["sourceType"] = source_type
-                    r["sourceData"] = data_item
-                    risks.append(r)
-            if analysis.get("opportunities"):
-                for o in analysis["opportunities"]:
-                    o["sourceType"] = source_type
-                    o["sourceData"] = data_item
-                    opportunities.append(o)
+            combined_items.append(payload)
+
+        combined_payload: dict[str, Any] = {
+            "items": combined_items,
+            "itemCount": len(combined_items),
+        }
+
+        analysis = await _analyze_data_item(
+            source_type,
+            combined_payload,
+            scope,
+            invoke,
+        )
+
+        # Store the original fetched data as sourceData, annotated as combined.
+        source_meta = {
+            "combined": True,
+            "itemCount": len(data_array),
+            "items": data_array,
+        }
+
+        if analysis.get("risks"):
+            for r in analysis["risks"]:
+                r["sourceType"] = source_type
+                r["sourceData"] = source_meta
+                risks.append(r)
+        if analysis.get("opportunities"):
+            for o in analysis["opportunities"]:
+                o["sourceType"] = source_type
+                o["sourceData"] = source_meta
+                opportunities.append(o)
+    logger.info(
+        "analyze_data: completed with %d risks, %d opportunities",
+        len(risks),
+        len(opportunities),
+    )
     return {"risks": risks, "opportunities": opportunities}
 
 
 async def analyze_global_risk(news_data: dict[str, list]) -> dict[str, list]:
     risks = []
     invoke = _get_llm_invoke()
+    logger.info(
+        "analyze_global_risk: starting for %d source types",
+        len(news_data),
+    )
     for source_type, data_array in news_data.items():
         for data_item in data_array:
-            payload = data_item.get("data") if isinstance(data_item, dict) else data_item or data_item
+            payload = (
+                data_item.get("data")
+                if isinstance(data_item, dict)
+                else data_item or data_item
+            )
             analysis = await _analyze_item_risks_only(
                 "global_news", payload, "global_risk", invoke
             )
@@ -210,15 +348,27 @@ async def analyze_global_risk(news_data: dict[str, list]) -> dict[str, list]:
                 r["sourceType"] = "global_news"
                 r["sourceData"] = data_item
                 risks.append(r)
+    logger.info(
+        "analyze_global_risk: completed with %d risks",
+        len(risks),
+    )
     return {"risks": risks}
 
 
 async def analyze_shipping_disruptions(route_data: dict[str, list]) -> dict[str, list]:
     risks = []
     invoke = _get_llm_invoke()
+    logger.info(
+        "analyze_shipping_disruptions: starting for %d route types",
+        len(route_data),
+    )
     for source_type, data_array in route_data.items():
         for data_item in data_array:
-            payload = data_item.get("data") if isinstance(data_item, dict) else data_item or data_item
+            payload = (
+                data_item.get("data")
+                if isinstance(data_item, dict)
+                else data_item or data_item
+            )
             analysis = await _analyze_item_risks_only(
                 source_type, payload, "shipping_routes", invoke
             )
@@ -226,6 +376,10 @@ async def analyze_shipping_disruptions(route_data: dict[str, list]) -> dict[str,
                 r["sourceType"] = "shipping"
                 r["sourceData"] = data_item
                 risks.append(r)
+    logger.info(
+        "analyze_shipping_disruptions: completed with %d risks",
+        len(risks),
+    )
     return {"risks": risks}
 
 
@@ -233,19 +387,37 @@ async def _analyze_data_item(
     source_type: str, data_item: dict, scope: OemScope | None, invoke
 ) -> dict:
     if not invoke:
-        return _mock_analyze_data_item(source_type, data_item)
+        logger.warning(
+            "_analyze_data_item: no LLM invoke configured; returning empty analysis "
+            "for source=%s",
+            source_type,
+        )
+        return {"risks": [], "opportunities": []}
     try:
         prompt = _build_analysis_prompt(source_type, data_item, scope)
         content = await invoke(prompt)
         parsed = _extract_json(content)
-        if parsed and isinstance(parsed.get("risks"), list) and isinstance(parsed.get("opportunities"), list):
-            return parsed
+        normalized = _normalize_analysis(parsed)
+        if normalized["risks"] or normalized["opportunities"]:
+            logger.info(
+                "_analyze_data_item: source=%s produced %d risks, %d opps",
+                source_type,
+                len(normalized["risks"]),
+                len(normalized["opportunities"]),
+            )
+            return normalized
+        logger.info(
+            "_analyze_data_item: source=%s produced no valid items; returning empty",
+            source_type,
+        )
     except Exception as e:
         logger.exception("analyzeDataItem error: %s", e)
-    return _mock_analyze_data_item(source_type, data_item)
+    return {"risks": [], "opportunities": []}
 
 
-def _build_analysis_prompt(source_type: str, data_item: dict, scope: OemScope | None) -> str:
+def _build_analysis_prompt(
+    source_type: str, data_item: dict, scope: OemScope | None
+) -> str:
     scope_ctx = ""
     if scope:
         scope_ctx = f"""
@@ -275,62 +447,17 @@ Return ONLY a valid JSON object:
 If none found, return empty arrays. Be specific and actionable."""
 
 
-def _mock_analyze_data_item(source_type: str, data_item: dict) -> dict:
-    risks = []
-    opportunities = []
-    if source_type == "weather":
-        cond = data_item.get("condition") or ""
-        if cond in ("Storm", "Rain"):
-            city = data_item.get("city", "Unknown")
-            country = data_item.get("country", "")
-            risks.append({
-                "title": f"Weather Alert: {cond} in {city}",
-                "description": f"Severe weather in {city}, {country}. May impact shipping and logistics.",
-                "severity": "high",
-                "affectedRegion": f"{city}, {country}",
-                "estimatedImpact": "Potential delays in shipping",
-                "estimatedCost": 50000,
-            })
-    if source_type == "news":
-        title = (data_item.get("title") or "").lower()
-        if "disruption" in title or "closure" in title or "delay" in title:
-            risks.append({
-                "title": f"News Alert: {data_item.get('title', '')}",
-                "description": data_item.get("description") or "Supply chain disruption detected",
-                "severity": "medium",
-                "estimatedImpact": "Potential supply chain impact",
-                "estimatedCost": 30000,
-            })
-    if source_type == "traffic":
-        delay = data_item.get("estimatedDelay", 0) or 0
-        cong = data_item.get("congestionLevel", "")
-        if delay > 60 or cong == "severe":
-            risks.append({
-                "title": f"Traffic Delay: {data_item.get('origin')} to {data_item.get('destination')}",
-                "description": f"Severe congestion. Estimated delay: {delay} minutes.",
-                "severity": "medium",
-                "affectedRegion": f"{data_item.get('origin')} - {data_item.get('destination')}",
-                "estimatedImpact": f"Transportation delay of {delay} minutes",
-                "estimatedCost": 10000,
-            })
-    if source_type == "market":
-        pct = data_item.get("priceChangePercent", 0) or 0
-        if pct < -5:
-            opportunities.append({
-                "title": f"Price Drop Opportunity: {data_item.get('commodity', '')}",
-                "description": f"Significant price drop for {data_item.get('commodity')}. Consider strategic purchasing.",
-                "type": "cost_saving",
-                "potentialBenefit": f"Potential cost savings on {data_item.get('commodity')} procurement",
-                "estimatedValue": abs(data_item.get("priceChange", 0) or 0) * 1000,
-            })
-    return {"risks": risks, "opportunities": opportunities}
-
-
 async def _analyze_item_risks_only(
     source_type: str, data_item: dict, context: str, invoke
 ) -> dict:
     if not invoke:
-        return _mock_analyze_item_risks_only(source_type, data_item, context)
+        logger.warning(
+            "_analyze_item_risks_only: no LLM invoke configured; returning empty "
+            "for context=%s source=%s",
+            context,
+            source_type,
+        )
+        return {"risks": []}
     try:
         if context == "global_risk":
             prompt = _build_global_risk_prompt(data_item)
@@ -338,11 +465,23 @@ async def _analyze_item_risks_only(
             prompt = _build_shipping_disruption_prompt(data_item)
         content = await invoke(prompt)
         parsed = _extract_json(content)
-        if parsed and isinstance(parsed.get("risks"), list):
-            return {"risks": parsed["risks"]}
+        normalized = _normalize_analysis(parsed)
+        if normalized["risks"]:
+            logger.info(
+                "_analyze_item_risks_only: context=%s source=%s risks=%d",
+                context,
+                source_type,
+                len(normalized["risks"]),
+            )
+            return {"risks": normalized["risks"]}
+        logger.info(
+            "_analyze_item_risks_only: context=%s source=%s no valid risks; returning empty",
+            context,
+            source_type,
+        )
     except Exception as e:
         logger.exception("analyzeItemRisksOnly error: %s", e)
-    return _mock_analyze_item_risks_only(source_type, data_item, context)
+    return {"risks": []}
 
 
 def _build_global_risk_prompt(data_item: dict) -> str:
@@ -367,45 +506,15 @@ Return ONLY a valid JSON object:
 If no risks, return {{ "risks": [] }}. Be specific to shipping and logistics."""
 
 
-def _mock_analyze_item_risks_only(
-    source_type: str, data_item: dict, context: str
-) -> dict:
-    risks = []
-    if context == "global_risk":
-        title = (data_item.get("title") or data_item.get("description") or "").lower()
-        if title and ("disruption" in title or "crisis" in title or "shortage" in title):
-            risks.append({
-                "title": f"Global risk: {(data_item.get('title') or title)[:60]}",
-                "description": data_item.get("description") or title,
-                "severity": "medium",
-                "affectedRegion": "Global",
-                "affectedSupplier": None,
-                "estimatedImpact": "Potential global supply chain impact",
-                "estimatedCost": 50000,
-            })
-    if context == "shipping_routes":
-        status = data_item.get("status") or data_item.get("routeStatus")
-        disrupted = status == "disrupted" or status == "delayed" or (data_item.get("delayDays") or 0) > 0
-        if disrupted:
-            origin = data_item.get("origin", "")
-            dest = data_item.get("destination", "")
-            delay_days = data_item.get("delayDays") or "?"
-            risks.append({
-                "title": f"Shipping disruption: {origin} → {dest}",
-                "description": f"Route disruption ({status}). {data_item.get('disruptionReason', 'Unknown')}. Delay: {delay_days} days.",
-                "severity": "high" if (data_item.get("delayDays") or 0) > 7 else "medium",
-                "affectedRegion": f"{origin} - {dest}",
-                "affectedSupplier": None,
-                "estimatedImpact": "Delivery delays and inventory risk",
-                "estimatedCost": 25000,
-            })
-    return {"risks": risks}
-
-
 async def generate_mitigation_plan(risk: dict) -> dict:
     invoke = _get_llm_invoke()
     if not invoke:
-        return _mock_mitigation_plan(risk)
+        logger.warning(
+            "generate_mitigation_plan: no LLM invoke configured; returning empty plan "
+            "for risk=%s",
+            risk.get("title"),
+        )
+        return {}
     try:
         prompt = f"""Generate a detailed mitigation plan for this supply chain risk:
 Title: {risk.get('title')}
@@ -422,31 +531,20 @@ Return ONLY a valid JSON object:
             return parsed
     except Exception as e:
         logger.exception("generateMitigationPlan error: %s", e)
-    return _mock_mitigation_plan(risk)
+    return {}
 
 
-def _mock_mitigation_plan(risk: dict) -> dict:
-    from datetime import datetime, timedelta
-    return {
-        "title": f"Mitigation Plan: {risk.get('title', '')}",
-        "description": f"Comprehensive mitigation strategy for {risk.get('severity', '')} severity risk",
-        "actions": [
-            "Assess immediate impact on operations",
-            "Contact affected suppliers for status update",
-            "Identify alternative suppliers or routes",
-            "Implement contingency logistics plan",
-            "Monitor situation and update stakeholders",
-        ],
-        "metadata": {"riskSeverity": risk.get("severity"), "autoGenerated": True},
-        "assignedTo": "Supply Chain Team",
-        "dueDate": (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d"),
-    }
-
-
-async def generate_combined_mitigation_plan(supplier_name: str, risks: list[dict]) -> dict:
+async def generate_combined_mitigation_plan(
+    supplier_name: str, risks: list[dict]
+) -> dict:
     invoke = _get_llm_invoke()
     if not invoke:
-        return _mock_combined_plan(supplier_name, risks)
+        logger.warning(
+            "generate_combined_mitigation_plan: no LLM invoke configured; "
+            "returning empty plan for supplier=%s",
+            supplier_name,
+        )
+        return {}
     try:
         risk_summaries = "\n".join(
             f"- {r.get('title')} ({r.get('severity')}): {r.get('description', '')} Region: {r.get('affectedRegion', 'N/A')}"
@@ -467,39 +565,24 @@ Prioritize highest-severity risks first. Be specific and actionable."""
         if parsed:
             parsed.setdefault("metadata", {})
             parsed["metadata"]["combinedForSupplier"] = supplier_name
-            parsed["metadata"]["riskIds"] = [str(r.get("id")) for r in risks if r.get("id")]
+            parsed["metadata"]["riskIds"] = [
+                str(r.get("id")) for r in risks if r.get("id")
+            ]
             return parsed
     except Exception as e:
         logger.exception("generateCombinedMitigationPlan error: %s", e)
-    return _mock_combined_plan(supplier_name, risks)
-
-
-def _mock_combined_plan(supplier_name: str, risks: list[dict]) -> dict:
-    from datetime import datetime, timedelta
-    return {
-        "title": f"Combined Mitigation Plan: {supplier_name}",
-        "description": f"Unified contingency plan for {supplier_name} addressing {len(risks)} risk(s).",
-        "actions": [
-            "Contact supplier for status and expected recovery",
-            "Assess impact on production schedule and customer orders",
-            "Identify and qualify backup suppliers or routes",
-            "Update inventory and safety stock targets",
-            "Document and communicate plan to stakeholders",
-        ],
-        "metadata": {
-            "combinedForSupplier": supplier_name,
-            "riskIds": [str(r.get("id")) for r in risks if r.get("id")],
-            "riskCount": len(risks),
-        },
-        "assignedTo": "Supply Chain Team",
-        "dueDate": (datetime.utcnow() + timedelta(days=7)).strftime("%Y-%m-%d"),
-    }
+    return {}
 
 
 async def generate_opportunity_plan(opportunity: dict) -> dict:
     invoke = _get_llm_invoke()
     if not invoke:
-        return _mock_opportunity_plan(opportunity)
+        logger.warning(
+            "generate_opportunity_plan: no LLM invoke configured; returning empty "
+            "plan for opportunity=%s",
+            opportunity.get("title"),
+        )
+        return {}
     try:
         prompt = f"""Generate an action plan to capitalize on this supply chain opportunity:
 Title: {opportunity.get('title')}
@@ -515,22 +598,4 @@ Return ONLY a valid JSON object:
             return parsed
     except Exception as e:
         logger.exception("generateOpportunityPlan error: %s", e)
-    return _mock_opportunity_plan(opportunity)
-
-
-def _mock_opportunity_plan(opportunity: dict) -> dict:
-    from datetime import datetime, timedelta
-    return {
-        "title": f"Action Plan: {opportunity.get('title', '')}",
-        "description": "Strategic plan to capitalize on identified opportunity",
-        "actions": [
-            "Evaluate opportunity feasibility",
-            "Calculate potential ROI",
-            "Develop implementation timeline",
-            "Secure necessary approvals",
-            "Execute opportunity capture plan",
-        ],
-        "metadata": {"opportunityType": opportunity.get("type"), "autoGenerated": True},
-        "assignedTo": "Strategic Planning Team",
-        "dueDate": (datetime.utcnow() + timedelta(days=14)).strftime("%Y-%m-%d"),
-    }
+    return {}

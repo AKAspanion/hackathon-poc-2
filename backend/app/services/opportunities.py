@@ -1,9 +1,27 @@
 from uuid import UUID
+from decimal import Decimal, InvalidOperation
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 from app.models.opportunity import Opportunity, OpportunityType, OpportunityStatus
 from app.schemas.opportunity import CreateOpportunity, UpdateOpportunity
+
+
+_MAX_NUMERIC = Decimal("99999999.99")
+
+
+def _sanitize_numeric(value) -> Decimal | None:
+    if value is None:
+        return None
+    try:
+        num = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if num > _MAX_NUMERIC:
+        return _MAX_NUMERIC
+    if num < -_MAX_NUMERIC:
+        return -_MAX_NUMERIC
+    return num
 
 
 def get_all(
@@ -71,7 +89,7 @@ def create_opportunity_from_dict(db: Session, data: dict) -> Opportunity:
         sourceData=data.get("sourceData"),
         affectedRegion=data.get("affectedRegion"),
         potentialBenefit=data.get("potentialBenefit"),
-        estimatedValue=data.get("estimatedValue"),
+        estimatedValue=_sanitize_numeric(data.get("estimatedValue")),
         oemId=data.get("oemId"),
     )
     db.add(opp)

@@ -27,5 +27,5 @@ class AgentStatusEntity(Base):
     risksDetected = Column(Integer, default=0)
     opportunitiesIdentified = Column(Integer, default=0)
     plansGenerated = Column(Integer, default=0)
-    lastUpdated = Column(DateTime(timezone=True), onupdate=func.now())
+    lastUpdated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     createdAt = Column(DateTime(timezone=True), server_default=func.now())

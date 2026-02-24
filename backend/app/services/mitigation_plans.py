@@ -58,6 +58,27 @@ def create_plan(db: Session, dto: CreateMitigationPlan) -> MitigationPlan:
     return plan
 
 
+def _normalize_actions(raw: list) -> list[str]:
+    """Convert actions to list of strings for ARRAY(Text). Handles LLM list-of-dicts."""
+    if not raw:
+        return []
+    out: list[str] = []
+    for item in raw:
+        if isinstance(item, str):
+            out.append(item.strip() or "—")
+        elif isinstance(item, dict):
+            s = (
+                item.get("action")
+                or item.get("description")
+                or item.get("title")
+                or (list(item.values())[0] if item else "—")
+            )
+            out.append(str(s).strip() or "—")
+        else:
+            out.append(str(item).strip() or "—")
+    return out
+
+
 def create_plan_from_dict(
     db: Session,
     plan_data: dict,
@@ -71,10 +92,12 @@ def create_plan_from_dict(
             due = datetime.strptime(due[:10], "%Y-%m-%d").date()
         except ValueError:
             due = None
+    raw_actions = plan_data.get("actions") or []
+    actions = _normalize_actions(raw_actions)
     plan = MitigationPlan(
         title=plan_data["title"],
         description=plan_data["description"],
-        actions=plan_data.get("actions") or [],
+        actions=actions,
         status=PlanStatus.DRAFT,
         riskId=risk_id,
         opportunityId=opportunity_id,
@@ -88,7 +111,9 @@ def create_plan_from_dict(
     return plan
 
 
-def update_plan(db: Session, id: UUID, dto: UpdateMitigationPlan) -> MitigationPlan | None:
+def update_plan(
+    db: Session, id: UUID, dto: UpdateMitigationPlan
+) -> MitigationPlan | None:
     plan = get_one(db, id)
     if not plan:
         return None

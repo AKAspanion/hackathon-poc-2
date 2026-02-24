@@ -4,19 +4,17 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
 from app.models.agent_status import AgentStatusEntity, AgentStatus
 from app.models.risk import Risk, RiskStatus
 from app.models.opportunity import Opportunity, OpportunityStatus
-from app.models.mitigation_plan import MitigationPlan, PlanStatus
+from app.models.mitigation_plan import MitigationPlan
 from app.models.supply_chain_risk_score import SupplyChainRiskScore
 from app.services.oems import get_oem_by_id, get_all_oems
 from app.services.suppliers import get_all as get_suppliers
-from app.services.risks import create_risk_from_dict, get_one as get_risk
+from app.services.risks import create_risk_from_dict
 from app.services.opportunities import create_opportunity_from_dict
 from app.services.mitigation_plans import create_plan_from_dict
-from app.services.data_sources.manager import DataSourceManager
 from app.services.agent_orchestrator import (
     analyze_data,
     analyze_global_risk,
@@ -30,7 +28,10 @@ from app.services.data_sources.manager import get_data_source_manager
 
 logger = logging.getLogger(__name__)
 
+# Severity weights for risk score (0-100). Critical=4, high=3, medium=2, low=1.
 SEVERITY_WEIGHT = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+# 40 weighted points => score 100 (e.g. 10 critical or 40 low).
+RISK_SCORE_SCALE = 100 / 40  # 2.5
 _is_running = False
 
 
@@ -42,6 +43,7 @@ def _ensure_agent_status(db: Session) -> AgentStatusEntity:
             risksDetected=0,
             opportunitiesIdentified=0,
             plansGenerated=0,
+            lastUpdated=datetime.utcnow(),
         )
         db.add(status)
         db.commit()
@@ -89,18 +91,37 @@ def get_oem_scope(db: Session, oem_id: UUID) -> OemScope | None:
 
 
 def _build_data_source_params(scope: OemScope) -> dict:
-    cities = scope.get("cities") or scope.get("locations")[:10] if scope.get("locations") else ["New York", "London", "Tokyo", "Mumbai", "Shanghai"]
+    cities = (
+        scope.get("cities")
+        or scope.get("locations")[:10]
+        if scope.get("locations")
+        else ["New York", "London", "Tokyo", "Mumbai", "Shanghai"]
+    )
     if not cities:
         cities = ["New York", "London", "Tokyo", "Mumbai", "Shanghai"]
-    commodities = scope.get("commodities") or ["steel", "copper", "oil", "grain", "semiconductors"]
+    commodities = scope.get("commodities") or [
+        "steel",
+        "copper",
+        "oil",
+        "grain",
+        "semiconductors",
+    ]
     if len(cities) >= 2:
         routes = [{"origin": cities[0], "destination": cities[1]}]
         if len(cities) >= 4:
             routes.append({"origin": cities[2], "destination": cities[3]})
     else:
         routes = [{"origin": "New York", "destination": "Los Angeles"}]
-    keywords = ["supply chain", "manufacturing", "logistics"] + (scope.get("commodities") or [])[:3]
-    return {"cities": cities, "commodities": commodities, "routes": routes, "keywords": keywords}
+    keywords = (
+        ["supply chain", "manufacturing", "logistics"]
+        + (scope.get("commodities") or [])[:3]
+    )
+    return {
+        "cities": cities,
+        "commodities": commodities,
+        "routes": routes,
+        "keywords": keywords,
+    }
 
 
 def _build_global_news_params() -> dict:
@@ -113,9 +134,14 @@ def _build_global_news_params() -> dict:
 
 
 def _compute_risk_score(risks: list) -> tuple[float, dict, dict]:
-    severity_counts = {}
-    breakdown = {}
-    weighted_sum = 0
+    """
+    Compute a risk score between 0 and 100 from detected risks.
+    Uses severity weights (critical=4, high=3, medium=2, low=1); 40 weighted
+    points map to 100 (e.g. 10 critical or 40 low). No risks => 0.
+    """
+    severity_counts: dict[str, int] = {}
+    breakdown: dict[str, float] = {}
+    weighted_sum = 0.0
     for r in risks:
         sev = (getattr(r.severity, "value", r.severity) or "medium").lower()
         severity_counts[sev] = severity_counts.get(sev, 0) + 1
@@ -123,9 +149,12 @@ def _compute_risk_score(risks: list) -> tuple[float, dict, dict]:
         weighted_sum += w
         src = (r.sourceType or "other")
         breakdown[src] = breakdown.get(src, 0) + w
-    count = len(risks)
-    avg = weighted_sum / count if count else 0
-    overall = min(100, round(avg * 25))
+    # Score 0-100: 0 when no risks, else min(100, weighted_sum * scale).
+    overall = (
+        0.0
+        if not risks
+        else min(100.0, round(weighted_sum * RISK_SCORE_SCALE, 2))
+    )
     return overall, breakdown, severity_counts
 
 
@@ -143,13 +172,45 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
     manager = get_data_source_manager()
     await manager.initialize()
 
+    logger.info(
+        "_run_analysis_for_oem: start for OEM %s (%s)",
+        scope["oemId"],
+        scope["oemName"],
+    )
+
     # 1. Supplier-scoped: weather + news
-    _update_status(db, AgentStatus.MONITORING.value, f"Fetching weather & news for OEM: {scope['oemName']}")
+    _update_status(
+        db,
+        AgentStatus.MONITORING.value,
+        f"Fetching weather & news for OEM: {scope['oemName']}",
+    )
     supplier_params = _build_data_source_params(scope)
     supplier_data = await manager.fetch_by_types(["weather", "news"], supplier_params)
-    _update_status(db, AgentStatus.ANALYZING.value, f"Analyzing for OEM: {scope['oemName']}")
+    logger.info(
+        "_run_analysis_for_oem: supplier data fetched "
+        "weather=%d news=%d for OEM %s",
+        len(supplier_data.get("weather") or []),
+        len(supplier_data.get("news") or []),
+        scope["oemName"],
+    )
+    _update_status(
+        db,
+        AgentStatus.ANALYZING.value,
+        f"Analyzing for OEM: {scope['oemName']}",
+    )
     supplier_analysis = await analyze_data(supplier_data, scope)
-    _update_status(db, AgentStatus.PROCESSING.value, f"Saving supplier results for OEM: {scope['oemName']}")
+    logger.info(
+        "_run_analysis_for_oem: supplier analysis results "
+        "risks=%d opportunities=%d for OEM %s",
+        len(supplier_analysis.get("risks") or []),
+        len(supplier_analysis.get("opportunities") or []),
+        scope["oemName"],
+    )
+    _update_status(
+        db,
+        AgentStatus.PROCESSING.value,
+        f"Saving supplier results for OEM: {scope['oemName']}",
+    )
     for r in supplier_analysis["risks"]:
         r["oemId"] = oem_id
         create_risk_from_dict(db, r)
@@ -158,24 +219,46 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         create_opportunity_from_dict(db, o)
 
     # 2. Global risk
-    _update_status(db, AgentStatus.MONITORING.value, "Fetching global news")
+    _update_status(
+        db,
+        AgentStatus.MONITORING.value,
+        "Fetching global news",
+    )
     global_data = await manager.fetch_by_types(["news"], _build_global_news_params())
     global_result = await analyze_global_risk(global_data)
+    logger.info(
+        "_run_analysis_for_oem: global news analysis risks=%d for OEM %s",
+        len(global_result.get("risks") or []),
+        scope["oemName"],
+    )
     for r in global_result["risks"]:
         r["oemId"] = oem_id
         create_risk_from_dict(db, r)
 
     # 3. Shipping routes
-    _update_status(db, AgentStatus.MONITORING.value, f"Fetching shipping for OEM: {scope['oemName']}")
+    _update_status(
+        db,
+        AgentStatus.MONITORING.value,
+        f"Fetching shipping for OEM: {scope['oemName']}",
+    )
     route_params = {"routes": supplier_params["routes"]}
     route_data = await manager.fetch_by_types(["traffic", "shipping"], route_params)
     shipping_result = await analyze_shipping_disruptions(route_data)
+    logger.info(
+        "_run_analysis_for_oem: shipping analysis risks=%d for OEM %s",
+        len(shipping_result.get("risks") or []),
+        scope["oemName"],
+    )
     for r in shipping_result["risks"]:
         r["oemId"] = oem_id
         create_risk_from_dict(db, r)
 
     # 4. Risk score
-    all_risks = db.query(Risk).filter(Risk.oemId == oem_id, Risk.status == RiskStatus.DETECTED).all()
+    all_risks = (
+        db.query(Risk)
+        .filter(Risk.oemId == oem_id, Risk.status == RiskStatus.DETECTED)
+        .all()
+    )
     overall, breakdown, severity_counts = _compute_risk_score(all_risks)
     score_ent = SupplyChainRiskScore(
         oemId=oem_id,
@@ -186,20 +269,49 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
     )
     db.add(score_ent)
     db.commit()
+    logger.info(
+        "_run_analysis_for_oem: risk score stored overall=%s for OEM %s "
+        "(risks=%d)",
+        overall,
+        scope["oemName"],
+        len(all_risks),
+    )
 
     # 5. Mitigation plans by supplier
-    risks_by_supplier = {}
+    risks_by_supplier: dict[str, list[Risk]] = {}
     for risk in all_risks:
         key = (risk.affectedSupplier or "").strip()
         if not key:
             continue
         risks_by_supplier.setdefault(key, []).append(risk)
+    combined_plans_created = 0
     for supplier_name, risk_list in risks_by_supplier.items():
         plan_data = await generate_combined_mitigation_plan(
             supplier_name,
-            [{"id": r.id, "title": r.title, "severity": getattr(r.severity, "value", r.severity), "description": r.description, "affectedRegion": r.affectedRegion} for r in risk_list],
+            [
+                {
+                    "id": r.id,
+                    "title": r.title,
+                    "severity": getattr(r.severity, "value", r.severity),
+                    "description": r.description,
+                    "affectedRegion": r.affectedRegion,
+                }
+                for r in risk_list
+            ],
         )
-        create_plan_from_dict(db, plan_data, risk_id=risk_list[0].id, opportunity_id=None)
+        create_plan_from_dict(
+            db,
+            plan_data,
+            risk_id=risk_list[0].id,
+            opportunity_id=None,
+        )
+        combined_plans_created += 1
+    logger.info(
+        "_run_analysis_for_oem: combined mitigation plans created=%d "
+        "for OEM %s",
+        combined_plans_created,
+        scope["oemName"],
+    )
 
     # 6. Per-risk plans for risks without supplier or not in combined
     risks_with_plan_supplier = set()
@@ -211,10 +323,15 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         .filter(Risk.oemId == oem_id, Risk.status == RiskStatus.DETECTED)
         .all()
     )
+    per_risk_plans_created = 0
     for risk in needs_plan:
         if risk.id in risks_with_plan_supplier:
             continue
-        plans = db.query(MitigationPlan).filter(MitigationPlan.riskId == risk.id).count()
+        plans = (
+            db.query(MitigationPlan)
+            .filter(MitigationPlan.riskId == risk.id)
+            .count()
+        )
         if plans > 0:
             continue
         plan_data = await generate_mitigation_plan({
@@ -224,16 +341,37 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
             "affectedRegion": risk.affectedRegion,
             "affectedSupplier": risk.affectedSupplier,
         })
-        create_plan_from_dict(db, plan_data, risk_id=risk.id, opportunity_id=None)
+        create_plan_from_dict(
+            db,
+            plan_data,
+            risk_id=risk.id,
+            opportunity_id=None,
+        )
+        per_risk_plans_created += 1
+    logger.info(
+        "_run_analysis_for_oem: per-risk mitigation plans created=%d "
+        "for OEM %s",
+        per_risk_plans_created,
+        scope["oemName"],
+    )
 
     # 7. Opportunity plans
     opportunities = (
         db.query(Opportunity)
-        .filter(Opportunity.oemId == oem_id, Opportunity.status == OpportunityStatus.IDENTIFIED)
+        .filter(
+            Opportunity.oemId == oem_id,
+            Opportunity.status == OpportunityStatus.IDENTIFIED,
+        )
         .all()
     )
+    opp_plans_created = 0
     for opp in opportunities:
-        if db.query(MitigationPlan).filter(MitigationPlan.opportunityId == opp.id).count() > 0:
+        if (
+            db.query(MitigationPlan)
+            .filter(MitigationPlan.opportunityId == opp.id)
+            .count()
+            > 0
+        ):
             continue
         plan_data = await generate_opportunity_plan({
             "title": opp.title,
@@ -241,7 +379,18 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
             "type": getattr(opp.type, "value", opp.type),
             "potentialBenefit": opp.potentialBenefit,
         })
-        create_plan_from_dict(db, plan_data, risk_id=None, opportunity_id=opp.id)
+        create_plan_from_dict(
+            db,
+            plan_data,
+            risk_id=None,
+            opportunity_id=opp.id,
+        )
+        opp_plans_created += 1
+    logger.info(
+        "_run_analysis_for_oem: opportunity plans created=%d for OEM %s",
+        opp_plans_created,
+        scope["oemName"],
+    )
 
 
 def get_status(db: Session) -> AgentStatusEntity | None:
@@ -265,6 +414,10 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
     _is_running = True
     try:
         if oem_id:
+            logger.info(
+                "trigger_manual_analysis_sync: starting manual run for OEM %s",
+                oem_id,
+            )
             scope = get_oem_scope(db, oem_id)
             if not scope:
                 logger.warning("OEM %s not found or no scope", oem_id)
@@ -279,6 +432,7 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
             db.commit()
             _update_status(db, AgentStatus.IDLE.value, "Manual analysis completed")
         else:
+            logger.info("trigger_manual_analysis_sync: starting run for all OEMs")
             oems = get_all_oems(db)
             if not oems:
                 _update_status(db, AgentStatus.IDLE.value, "No OEMs to process")

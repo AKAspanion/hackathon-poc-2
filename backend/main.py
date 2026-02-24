@@ -3,39 +3,33 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import settings
-from app.api.routes import app_routes, oems, risks, opportunities, mitigation_plans, suppliers, agent
-from app.services.agent_service import run_scheduled_cycle
+from app.api.routes import (
+    app_routes,
+    oems,
+    risks,
+    opportunities,
+    mitigation_plans,
+    suppliers,
+    agent,
+)
 from app.database import Base, engine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+# Suppress SQL echo/logging (engine already has echo=False)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 # Ensure DB tables exist for SQLAlchemy models
 Base.metadata.create_all(bind=engine)
 
 
-def scheduled_job():
-    from app.database import SessionLocal
-    db = SessionLocal()
-    try:
-        run_scheduled_cycle(db)
-    except Exception as e:
-        logger.exception("Scheduled agent cycle failed: %s", e)
-    finally:
-        db.close()
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(scheduled_job, "interval", minutes=5, id="agent_cycle")
-    scheduler.start()
-    logger.info("Scheduler started (agent cycle every 5 minutes)")
+    # No periodic scheduler: agent workflow is triggered explicitly
+    # via the /agent/trigger endpoint from the frontend.
     yield
-    scheduler.shutdown()
 
 
 app = FastAPI(

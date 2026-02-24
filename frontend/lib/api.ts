@@ -114,6 +114,28 @@ export interface SupplierRiskSummary {
   latest: { id: string; severity: string; title: string } | null;
 }
 
+export type SwarmAgentType = 'WEATHER' | 'SHIPPING' | 'NEWS';
+
+export type SwarmRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+
+export interface SwarmAgentResult {
+  agentType: SwarmAgentType;
+  score: number;
+  riskLevel: SwarmRiskLevel;
+  signals: string[];
+  interpretedRisks: string[];
+  confidence: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface SupplierSwarmSummary {
+  finalScore: number;
+  riskLevel: SwarmRiskLevel;
+  topDrivers: string[];
+  mitigationPlan: string[];
+  agents: SwarmAgentResult[];
+}
+
 export interface Oem {
   id: string;
   name: string;
@@ -134,6 +156,7 @@ export interface Supplier {
   createdAt: string;
   updatedAt: string;
   riskSummary: SupplierRiskSummary;
+  swarm?: SupplierSwarmSummary | null;
 }
 
 // API functions

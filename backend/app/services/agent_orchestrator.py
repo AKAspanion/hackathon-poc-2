@@ -330,52 +330,85 @@ async def analyze_data(
 async def analyze_global_risk(news_data: dict[str, list]) -> dict[str, list]:
     risks = []
     invoke = _get_llm_invoke()
-    logger.info(
-        "analyze_global_risk: starting for %d source types",
-        len(news_data),
-    )
+    combined_items: list[dict] = []
+    raw_items: list = []
     for source_type, data_array in news_data.items():
         for data_item in data_array:
             payload = (
                 data_item.get("data")
                 if isinstance(data_item, dict)
-                else data_item or data_item
+                else data_item
             )
-            analysis = await _analyze_item_risks_only(
-                "global_news", payload, "global_risk", invoke
-            )
-            for r in analysis.get("risks") or []:
-                r["sourceType"] = "global_news"
-                r["sourceData"] = data_item
-                risks.append(r)
+            if not payload:
+                payload = data_item
+            combined_items.append(payload)
+            raw_items.append(data_item)
+    if not combined_items:
+        logger.info("analyze_global_risk: no items; skipping")
+        return {"risks": risks}
     logger.info(
-        "analyze_global_risk: completed with %d risks",
-        len(risks),
+        "analyze_global_risk: batch analyzing %d items (1 LLM call)",
+        len(combined_items),
     )
+    combined_payload: dict[str, Any] = {
+        "items": combined_items,
+        "itemCount": len(combined_items),
+    }
+    analysis = await _analyze_item_risks_only(
+        "global_news", combined_payload, "global_risk", invoke
+    )
+    source_meta = {
+        "combined": True,
+        "itemCount": len(raw_items),
+        "items": raw_items,
+    }
+    for r in analysis.get("risks") or []:
+        r["sourceType"] = "global_news"
+        r["sourceData"] = source_meta
+        risks.append(r)
+    logger.info("analyze_global_risk: completed with %d risks", len(risks))
     return {"risks": risks}
 
 
 async def analyze_shipping_disruptions(route_data: dict[str, list]) -> dict[str, list]:
     risks = []
     invoke = _get_llm_invoke()
-    logger.info(
-        "analyze_shipping_disruptions: starting for %d route types",
-        len(route_data),
-    )
+    combined_items: list[dict] = []
+    raw_items: list = []
     for source_type, data_array in route_data.items():
         for data_item in data_array:
             payload = (
                 data_item.get("data")
                 if isinstance(data_item, dict)
-                else data_item or data_item
+                else data_item
             )
-            analysis = await _analyze_item_risks_only(
-                source_type, payload, "shipping_routes", invoke
-            )
-            for r in analysis.get("risks") or []:
-                r["sourceType"] = "shipping"
-                r["sourceData"] = data_item
-                risks.append(r)
+            if not payload:
+                payload = data_item
+            combined_items.append(payload)
+            raw_items.append(data_item)
+    if not combined_items:
+        logger.info("analyze_shipping_disruptions: no items; skipping")
+        return {"risks": risks}
+    logger.info(
+        "analyze_shipping_disruptions: batch analyzing %d items (1 LLM call)",
+        len(combined_items),
+    )
+    combined_payload: dict[str, Any] = {
+        "items": combined_items,
+        "itemCount": len(combined_items),
+    }
+    analysis = await _analyze_item_risks_only(
+        "shipping", combined_payload, "shipping_routes", invoke
+    )
+    source_meta = {
+        "combined": True,
+        "itemCount": len(raw_items),
+        "items": raw_items,
+    }
+    for r in analysis.get("risks") or []:
+        r["sourceType"] = "shipping"
+        r["sourceData"] = source_meta
+        risks.append(r)
     logger.info(
         "analyze_shipping_disruptions: completed with %d risks",
         len(risks),
@@ -485,9 +518,16 @@ async def _analyze_item_risks_only(
 
 
 def _build_global_risk_prompt(data_item: dict) -> str:
+    batch_note = ""
+    if isinstance(data_item, dict) and "items" in data_item:
+        batch_note = (
+            "The data below contains multiple news items (an \"items\" array). "
+            "Assess all of them and return risks for any that indicate "
+            "material global supply chain risk.\n\n"
+        )
     return f"""You are a global supply chain risk analyst. Assess the following for GLOBAL supply chain risk (geopolitical, trade, raw materials, pandemics, climate, logistics).
 
-Data:
+{batch_note}Data:
 {json.dumps(data_item, indent=2)}
 
 Return ONLY a valid JSON object:
@@ -496,9 +536,16 @@ If no material risks, return {{ "risks": [] }}. Be concise."""
 
 
 def _build_shipping_disruption_prompt(data_item: dict) -> str:
+    batch_note = ""
+    if isinstance(data_item, dict) and "items" in data_item:
+        batch_note = (
+            "The data below contains multiple route/transport items. "
+            "Assess all of them and return risks for any that indicate "
+            "disruption or delay.\n\n"
+        )
     return f"""You are a shipping and logistics risk analyst. Analyze the following route/transport data for supply chain disruption risks.
 
-Data:
+{batch_note}Data:
 {json.dumps(data_item, indent=2)}
 
 Return ONLY a valid JSON object:

@@ -1,65 +1,121 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import type { WeatherRiskResponse } from "@/lib/types";
+import { fetchWeatherRisk } from "@/lib/api";
+import {
+  WeatherRiskForm,
+  LocationWeatherCard,
+  RiskSummaryCard,
+  AgentSummaryCard,
+  RiskFactorsGrid,
+} from "@/components";
 
 export default function Home() {
+  const [city, setCity] = useState("New Delhi");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<WeatherRiskResponse | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setData(null);
+    try {
+      const result = await fetchWeatherRisk(city);
+      setData(result);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while calling the agent.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="min-h-screen bg-off-white">
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-10 px-4 py-10 md:flex-row md:items-stretch md:py-14 lg:px-8">
+        <aside className="flex flex-1 flex-col justify-between border-b border-light-gray pb-8 md:border-b-0 md:border-r md:border-light-gray md:pb-0 md:pr-10">
+          <div className="space-y-6">
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary-light/50 bg-sky-blue/40 px-3 py-1.5 text-[12px] font-medium uppercase tracking-wide text-primary-dark">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary-light" />
+              Swarm Controller · Manufacturing
+            </div>
+            <h1 className="text-[40px] font-bold leading-tight text-dark-gray md:text-[40px]">
+              Weather‑aware{" "}
+              <span className="bg-linear-to-r from-primary-dark via-primary-light to-cyan-blue bg-clip-text text-transparent">
+                Supply Chain Risk Agent
+              </span>
+            </h1>
+            <p className="max-w-xl text-[16px] leading-relaxed text-medium-gray">
+              Enter a city. Our agent pulls live weather, translates it into
+              operational risk for your plant, and proposes concrete mitigation
+              actions — in seconds, not days.
+            </p>
+            <ul className="mt-4 space-y-2 text-[16px] text-medium-gray">
+              <li>• Maps weather → transport, power, port, production risk</li>
+              <li>
+                • Generates executive‑ready summaries via local LLM (Ollama)
+              </li>
+              <li>• Designed for real‑time control rooms and S&OP war rooms</li>
+            </ul>
+          </div>
+          <p className="mt-8 hidden text-[14px] text-medium-gray md:block">
+            Backend: FastAPI · LangGraph · Ollama · WeatherAPI
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+        </aside>
+
+        <main className="flex flex-1 flex-col gap-6">
+          <WeatherRiskForm
+            city={city}
+            onCityChange={setCity}
+            onSubmit={handleSubmit}
+            loading={loading}
+            error={error}
+          />
+
+          <section className="flex-1 space-y-4 rounded-2xl border border-light-gray bg-white p-5 shadow-sm">
+            {!data && !loading && !error && (
+              <p className="text-[16px] text-medium-gray">
+                Run the agent with a city to see live manufacturing risk and
+                mitigation guidance here.
+              </p>
+            )}
+
+            {data && (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.4fr,1.6fr]">
+                  <LocationWeatherCard
+                    location={data.location}
+                    weather={data.weather}
+                  />
+                  <RiskSummaryCard
+                    overallLevel={data.risk.overall_level}
+                    overallScore={data.risk.overall_score}
+                    primaryConcerns={data.risk.primary_concerns}
+                  />
+                </div>
+
+                {data.agent_summary && (
+                  <AgentSummaryCard summary={data.agent_summary} />
+                )}
+
+                <RiskFactorsGrid factors={data.risk.factors} />
+              </div>
+            )}
+
+            {loading && (
+              <p className="text-[16px] text-medium-gray">
+                Thinking through weather, logistics and mitigation options…
+              </p>
+            )}
+          </section>
+        </main>
+      </div>
     </div>
   );
 }

@@ -61,6 +61,11 @@ class Risk(Base):
     )
 
     oemId = Column(UUID(as_uuid=True), nullable=True)
+    agentStatusId = Column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_status.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
     updatedAt = Column(
         DateTime(timezone=True),

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, DateTime, Numeric
+from sqlalchemy import Column, String, DateTime, Numeric, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 
@@ -16,3 +16,8 @@ class SupplyChainRiskScore(Base):
     severityCounts = Column(JSONB, nullable=True)
     riskIds = Column(String, nullable=True)  # simple-array stored as comma-separated
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
+    agentStatusId = Column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_status.id", ondelete="SET NULL"),
+        nullable=True,
+    )

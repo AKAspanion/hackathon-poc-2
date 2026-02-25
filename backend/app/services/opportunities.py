@@ -71,7 +71,11 @@ def create_opportunity(db: Session, dto: CreateOpportunity) -> Opportunity:
     return opp
 
 
-def create_opportunity_from_dict(db: Session, data: dict) -> Opportunity:
+def create_opportunity_from_dict(
+    db: Session,
+    data: dict,
+    agent_status_id: UUID | None = None,
+) -> Opportunity:
     type_val = data.get("type", "cost_saving")
     if isinstance(type_val, str):
         try:
@@ -91,6 +95,7 @@ def create_opportunity_from_dict(db: Session, data: dict) -> Opportunity:
         potentialBenefit=data.get("potentialBenefit"),
         estimatedValue=_sanitize_numeric(data.get("estimatedValue")),
         oemId=data.get("oemId"),
+        agentStatusId=agent_status_id,
     )
     db.add(opp)
     db.commit()

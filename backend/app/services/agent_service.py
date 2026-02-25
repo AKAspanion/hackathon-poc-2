@@ -44,7 +44,18 @@ _is_running = False
 
 
 def _ensure_agent_status(db: Session) -> AgentStatusEntity:
-    status = db.query(AgentStatusEntity).first()
+    """
+    Ensure there is at least one AgentStatusEntity row.
+
+    This is used primarily for the /agent/status endpoint to bootstrap
+    an initial idle status on a fresh database. It always returns the
+    most recently created row.
+    """
+    status = (
+        db.query(AgentStatusEntity)
+        .order_by(AgentStatusEntity.createdAt.desc())
+        .first()
+    )
     if not status:
         status = AgentStatusEntity(
             status=AgentStatus.IDLE.value,
@@ -57,6 +68,55 @@ def _ensure_agent_status(db: Session) -> AgentStatusEntity:
         db.commit()
         db.refresh(status)
     return status
+
+
+def _get_running_status(db: Session) -> AgentStatusEntity | None:
+    """
+    Return the most recent agent_status row that represents an active run.
+
+    A row is considered "running" only while it is in one of the
+    transitional states: monitoring, analyzing, or processing. Idle and
+    completed/error states are treated as non-running so a new trigger
+    will create a fresh workflow entry.
+    """
+    return (
+        db.query(AgentStatusEntity)
+        .filter(
+            AgentStatusEntity.status.in_(
+                [
+                    AgentStatus.MONITORING.value,
+                    AgentStatus.ANALYZING.value,
+                    AgentStatus.PROCESSING.value,
+                ]
+            )
+        )
+        .order_by(AgentStatusEntity.createdAt.desc())
+        .first()
+    )
+
+
+def _create_agent_run(
+    db: Session,
+    initial_task: str | None,
+) -> AgentStatusEntity:
+    """
+    Create a new agent_status row representing a single workflow trigger.
+    """
+    ent = AgentStatusEntity(
+        status=AgentStatus.MONITORING.value,
+        currentTask=initial_task,
+        risksDetected=0,
+        opportunitiesIdentified=0,
+        plansGenerated=0,
+        lastProcessedData=None,
+        lastDataSource=None,
+        errorMessage=None,
+        lastUpdated=datetime.utcnow(),
+    )
+    db.add(ent)
+    db.commit()
+    db.refresh(ent)
+    return ent
 
 
 def get_oem_scope(db: Session, oem_id: UUID) -> OemScope | None:
@@ -198,20 +258,39 @@ def _score_to_level(score: float) -> str:
     return "CRITICAL"
 
 
-def _update_status(db: Session, status: str, task: str | None = None) -> None:
-    ent = db.query(AgentStatusEntity).first()
-    if ent:
-        ent.status = status
-        ent.currentTask = task
-        ent.lastUpdated = datetime.utcnow()
-        db.commit()
+def _update_status(
+    db: Session,
+    status: str,
+    task: str | None = None,
+    agent_status_id: UUID | None = None,
+) -> None:
+    """
+    Update the status row for the current run. If an explicit id is
+    provided, update that row; otherwise fall back to the latest row.
+    """
+    q = db.query(AgentStatusEntity)
+    if agent_status_id:
+        ent = q.filter(AgentStatusEntity.id == agent_status_id).first()
+    else:
+        ent = q.order_by(AgentStatusEntity.createdAt.desc()).first()
+    if not ent:
+        return
+    ent.status = status
+    ent.currentTask = task
+    ent.lastUpdated = datetime.utcnow()
+    db.commit()
 
 
-async def _broadcast_current_status(db: Session) -> None:
+async def _broadcast_current_status(
+    db: Session,
+    agent_status_id: UUID | None = None,
+) -> None:
     """
     Build a lightweight status payload and broadcast it to websocket clients.
     """
-    ent = get_status(db)
+    ent = get_status(db) if agent_status_id is None else db.query(
+        AgentStatusEntity
+    ).filter(AgentStatusEntity.id == agent_status_id).first()
     if not ent:
         return
     payload = {
@@ -275,7 +354,11 @@ async def _broadcast_suppliers_for_oem(db: Session, oem_id: UUID) -> None:
     await broadcast_suppliers_snapshot(str(oem_id), suppliers_payload)
 
 
-async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
+async def _run_analysis_for_oem(
+    db: Session,
+    scope: OemScope,
+    agent_status_id: UUID,
+) -> None:
     oem_id = UUID(scope["oemId"])
     manager = get_data_source_manager()
     await manager.initialize()
@@ -291,8 +374,9 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         db,
         AgentStatus.MONITORING.value,
         f"Fetching weather & news for OEM: {scope['oemName']}",
+        agent_status_id,
     )
-    await _broadcast_current_status(db)
+    await _broadcast_current_status(db, agent_status_id)
     supplier_params = _build_data_source_params(scope)
     supplier_data = await manager.fetch_by_types(["weather", "news"], supplier_params)
     logger.info(
@@ -306,8 +390,9 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         db,
         AgentStatus.ANALYZING.value,
         f"Analyzing for OEM: {scope['oemName']}",
+        agent_status_id,
     )
-    await _broadcast_current_status(db)
+    await _broadcast_current_status(db, agent_status_id)
     supplier_analysis = await analyze_data(supplier_data, scope)
     logger.info(
         "_run_analysis_for_oem: supplier analysis results "
@@ -320,14 +405,15 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         db,
         AgentStatus.PROCESSING.value,
         f"Saving supplier results for OEM: {scope['oemName']}",
+        agent_status_id,
     )
-    await _broadcast_current_status(db)
+    await _broadcast_current_status(db, agent_status_id)
     for r in supplier_analysis["risks"]:
         r["oemId"] = oem_id
-        create_risk_from_dict(db, r)
+        create_risk_from_dict(db, r, agent_status_id=agent_status_id)
     for o in supplier_analysis["opportunities"]:
         o["oemId"] = oem_id
-        create_opportunity_from_dict(db, o)
+        create_opportunity_from_dict(db, o, agent_status_id=agent_status_id)
 
     # Broadcast after supplier-scoped risks/opportunities have been stored so
     # the dashboard can show early signals per supplier.
@@ -338,8 +424,9 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         db,
         AgentStatus.MONITORING.value,
         "Fetching global news",
+        agent_status_id,
     )
-    await _broadcast_current_status(db)
+    await _broadcast_current_status(db, agent_status_id)
     global_data = await manager.fetch_by_types(["news"], _build_global_news_params())
     global_result = await analyze_global_risk(global_data)
     logger.info(
@@ -349,7 +436,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
     )
     for r in global_result["risks"]:
         r["oemId"] = oem_id
-        create_risk_from_dict(db, r)
+        create_risk_from_dict(db, r, agent_status_id=agent_status_id)
 
     # Broadcast again after global risks have been incorporated.
     await _broadcast_suppliers_for_oem(db, oem_id)
@@ -359,8 +446,9 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         db,
         AgentStatus.MONITORING.value,
         f"Fetching shipping for OEM: {scope['oemName']}",
+        agent_status_id,
     )
-    await _broadcast_current_status(db)
+    await _broadcast_current_status(db, agent_status_id)
     route_params = {"routes": supplier_params["routes"]}
     route_data = await manager.fetch_by_types(["traffic", "shipping"], route_params)
     shipping_result = await analyze_shipping_disruptions(route_data)
@@ -371,12 +459,16 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
     )
     for r in shipping_result["risks"]:
         r["oemId"] = oem_id
-        create_risk_from_dict(db, r)
+        create_risk_from_dict(db, r, agent_status_id=agent_status_id)
 
     # 4. Risk score (OEM-level)
     all_risks = (
         db.query(Risk)
-        .filter(Risk.oemId == oem_id, Risk.status == RiskStatus.DETECTED)
+        .filter(
+            Risk.oemId == oem_id,
+            Risk.status == RiskStatus.DETECTED,
+            Risk.agentStatusId == agent_status_id,
+        )
         .all()
     )
     overall, breakdown, severity_counts = _compute_risk_score(all_risks)
@@ -386,6 +478,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         breakdown=breakdown,
         severityCounts=severity_counts,
         riskIds=",".join(str(r.id) for r in all_risks) if all_risks else None,
+        agentStatusId=agent_status_id,
     )
     db.add(score_ent)
     db.commit()
@@ -448,6 +541,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
             plan_data,
             risk_id=risk_list[0].id,
             opportunity_id=None,
+            agent_status_id=agent_status_id,
         )
         combined_plans_created += 1
     logger.info(
@@ -464,7 +558,11 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
             risks_with_plan_supplier.add(r.id)
     needs_plan = (
         db.query(Risk)
-        .filter(Risk.oemId == oem_id, Risk.status == RiskStatus.DETECTED)
+        .filter(
+            Risk.oemId == oem_id,
+            Risk.status == RiskStatus.DETECTED,
+            Risk.agentStatusId == agent_status_id,
+        )
         .all()
     )
     per_risk_plans_created = 0
@@ -490,6 +588,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
             plan_data,
             risk_id=risk.id,
             opportunity_id=None,
+            agent_status_id=agent_status_id,
         )
         per_risk_plans_created += 1
     logger.info(
@@ -505,6 +604,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         .filter(
             Opportunity.oemId == oem_id,
             Opportunity.status == OpportunityStatus.IDENTIFIED,
+            Opportunity.agentStatusId == agent_status_id,
         )
         .all()
     )
@@ -528,6 +628,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
             plan_data,
             risk_id=None,
             opportunity_id=opp.id,
+            agent_status_id=agent_status_id,
         )
         opp_plans_created += 1
     logger.info(
@@ -541,7 +642,16 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
 
 
 def get_status(db: Session) -> AgentStatusEntity | None:
-    return db.query(AgentStatusEntity).first()
+    """
+    Latest agent_status row, representing the most recent workflow run.
+
+    Used by the dashboard to display the current/last run.
+    """
+    return (
+        db.query(AgentStatusEntity)
+        .order_by(AgentStatusEntity.createdAt.desc())
+        .first()
+    )
 
 
 def get_latest_risk_score(db: Session, oem_id: UUID) -> SupplyChainRiskScore | None:
@@ -555,8 +665,19 @@ def get_latest_risk_score(db: Session, oem_id: UUID) -> SupplyChainRiskScore | N
 
 def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
     global _is_running
+    # First, check for any in-progress run in the database so we don't
+    # create duplicate runs across processes.
+    running = _get_running_status(db)
+    if running:
+        logger.warning(
+            "Agent run already in progress with id %s and status %s",
+            running.id,
+            running.status,
+        )
+        return
+
     if _is_running:
-        logger.warning("Agent is already running")
+        logger.warning("Agent is already running (in-process flag)")
         return
     _is_running = True
     try:
@@ -569,54 +690,92 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
             if not scope:
                 logger.warning("OEM %s not found or no scope", oem_id)
                 return
-            _update_status(
+            run = _create_agent_run(
                 db,
-                AgentStatus.MONITORING.value,
-                f"Manual run for OEM: {scope['oemName']}",
+                initial_task=f"Manual run for OEM: {scope['oemName']}",
             )
-            asyncio.run(_run_analysis_for_oem(db, scope))
-            ent = _ensure_agent_status(db)
-            ent.risksDetected = db.query(Risk).count()
-            ent.opportunitiesIdentified = db.query(Opportunity).count()
-            ent.plansGenerated = db.query(MitigationPlan).count()
-            ent.lastProcessedData = {
+            asyncio.run(_run_analysis_for_oem(db, scope, run.id))
+            # Aggregate counts for this workflow run only.
+            run.risksDetected = (
+                db.query(Risk).filter(Risk.agentStatusId == run.id).count()
+            )
+            run.opportunitiesIdentified = (
+                db.query(Opportunity)
+                .filter(Opportunity.agentStatusId == run.id)
+                .count()
+            )
+            run.plansGenerated = (
+                db.query(MitigationPlan)
+                .filter(MitigationPlan.agentStatusId == run.id)
+                .count()
+            )
+            run.lastProcessedData = {
                 "timestamp": datetime.utcnow().isoformat(),
                 "oemsProcessed": [scope["oemName"]],
             }
             db.commit()
-            _update_status(db, AgentStatus.IDLE.value, "Manual analysis completed")
+            _update_status(
+                db,
+                AgentStatus.COMPLETED.value,
+                "Manual analysis completed",
+                agent_status_id=run.id,
+            )
         else:
             logger.info("trigger_manual_analysis_sync: starting run for all OEMs")
             oems = get_all_oems(db)
             if not oems:
-                _update_status(db, AgentStatus.IDLE.value, "No OEMs to process")
+                _update_status(
+                    db,
+                    AgentStatus.COMPLETED.value,
+                    "No OEMs to process",
+                )
                 return
+            run = _create_agent_run(
+                db,
+                initial_task="Monitoring cycle for all OEMs",
+            )
             for oem in oems:
                 scope = get_oem_scope(db, oem.id)
                 if not scope:
                     continue
-                asyncio.run(_run_analysis_for_oem(db, scope))
-            ent = _ensure_agent_status(db)
-            ent.risksDetected = db.query(Risk).count()
-            ent.opportunitiesIdentified = db.query(Opportunity).count()
-            ent.plansGenerated = db.query(MitigationPlan).count()
-            ent.lastProcessedData = {
+                asyncio.run(_run_analysis_for_oem(db, scope, run.id))
+            run.risksDetected = (
+                db.query(Risk).filter(Risk.agentStatusId == run.id).count()
+            )
+            run.opportunitiesIdentified = (
+                db.query(Opportunity)
+                .filter(Opportunity.agentStatusId == run.id)
+                .count()
+            )
+            run.plansGenerated = (
+                db.query(MitigationPlan)
+                .filter(MitigationPlan.agentStatusId == run.id)
+                .count()
+            )
+            run.lastProcessedData = {
                 "timestamp": datetime.utcnow().isoformat(),
                 "oemsProcessed": [o.name for o in oems],
             }
             db.commit()
-            _update_status(db, AgentStatus.IDLE.value, "Monitoring cycle completed")
+            _update_status(
+                db,
+                AgentStatus.COMPLETED.value,
+                "Monitoring cycle completed",
+                agent_status_id=run.id,
+            )
     except Exception as e:
         logger.exception("Error in analysis: %s", e)
         try:
             db.rollback()
         except Exception:
             pass
-        _update_status(
-            db,
-            AgentStatus.ERROR.value,
-            f"Error: {e}",
-        )
+        # Attempt to mark the most recent run as errored.
+        latest = get_status(db)
+        if latest:
+            latest.status = AgentStatus.ERROR.value
+            latest.errorMessage = f"Error: {e}"
+            latest.lastUpdated = datetime.utcnow()
+            db.commit()
     finally:
         _is_running = False
 

@@ -116,7 +116,11 @@ def _resolve_supplier_id(
     return (supplier.id if supplier else None), name
 
 
-def create_risk_from_dict(db: Session, data: dict) -> Risk:
+def create_risk_from_dict(
+    db: Session,
+    data: dict,
+    agent_status_id: UUID | None = None,
+) -> Risk:
     oem_id = data.get("oemId")
     supplier_id, supplier_name = _resolve_supplier_id(
         db,
@@ -137,6 +141,7 @@ def create_risk_from_dict(db: Session, data: dict) -> Risk:
         estimatedCost=_sanitize_numeric(data.get("estimatedCost")),
         oemId=oem_id,
         supplierId=supplier_id,
+        agentStatusId=agent_status_id,
     )
     db.add(risk)
     db.commit()

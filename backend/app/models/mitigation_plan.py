@@ -69,6 +69,11 @@ class MitigationPlan(Base):
     )
     riskId = Column(UUID(as_uuid=True), ForeignKey("risks.id"), nullable=True)
     opportunityId = Column(UUID(as_uuid=True), ForeignKey("opportunities.id"), nullable=True)
+    agentStatusId = Column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_status.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     metadata_ = Column("metadata", JSONB, nullable=True)
     assignedTo = Column(String, nullable=True)
     dueDate = Column(Date, nullable=True)

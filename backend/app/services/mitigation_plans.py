@@ -84,6 +84,7 @@ def create_plan_from_dict(
     plan_data: dict,
     risk_id: UUID | None = None,
     opportunity_id: UUID | None = None,
+    agent_status_id: UUID | None = None,
 ) -> MitigationPlan:
     due = plan_data.get("dueDate")
     if isinstance(due, str):
@@ -104,6 +105,7 @@ def create_plan_from_dict(
         metadata_=plan_data.get("metadata"),
         assignedTo=plan_data.get("assignedTo"),
         dueDate=due,
+        agentStatusId=agent_status_id,
     )
     db.add(plan)
     db.commit()

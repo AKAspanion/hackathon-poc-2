@@ -12,6 +12,7 @@ class AgentStatus(str, enum.Enum):
     MONITORING = "monitoring"
     ANALYZING = "analyzing"
     PROCESSING = "processing"
+    COMPLETED = "completed"
     ERROR = "error"
 
 

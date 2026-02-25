@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import Column, String, Text, DateTime, Numeric, Enum
+from sqlalchemy import Column, String, Text, DateTime, Numeric, Enum, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -52,6 +52,11 @@ class Opportunity(Base):
     potentialBenefit = Column(String, nullable=True)
     estimatedValue = Column(Numeric(10, 2), nullable=True)
     oemId = Column(UUID(as_uuid=True), nullable=True)
+    agentStatusId = Column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_status.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
     updatedAt = Column(
         DateTime(timezone=True),

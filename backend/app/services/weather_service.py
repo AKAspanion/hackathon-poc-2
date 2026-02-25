@@ -12,17 +12,18 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.weatherapi.com/v1"
 
 
-def _location_query(pincode: str, country_code: str) -> str:
-    code = country_code.upper() if len(country_code) == 2 else country_code
-    return f"{pincode},{code}"
+def _location_query(city: str) -> str:
+    return (city or "").strip() or ""
 
 
-async def get_current_weather(pincode: str, country_code: str) -> dict[str, Any] | None:
+async def get_current_weather(city: str) -> dict[str, Any] | None:
     if not settings.weather_api_key:
         logger.warning("WEATHER_API_KEY not set")
         return None
 
-    q = _location_query(pincode, country_code)
+    q = _location_query(city)
+    if not q:
+        return None
     params: dict[str, str | int] = {"key": settings.weather_api_key, "q": q, "aqi": "no"}
     url = f"{BASE_URL}/current.json"
 
@@ -70,12 +71,12 @@ async def _resolve_location(client: httpx.AsyncClient, q: str) -> str | None:
         return None
 
 
-async def get_forecast(
-    pincode: str, country_code: str, days: int | None = None
-) -> dict[str, Any] | None:
+async def get_forecast(city: str, days: int | None = None) -> dict[str, Any] | None:
     if not settings.weather_api_key:
         return None
-    q = _location_query(pincode, country_code)
+    q = _location_query(city)
+    if not q:
+        return None
     days = days or settings.weather_days_forecast
     params: dict[str, str | int] = {
         "key": settings.weather_api_key,

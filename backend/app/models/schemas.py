@@ -14,8 +14,7 @@ class RiskLevel(str, Enum):
 
 
 class LocationQuery(BaseModel):
-    pincode: str = Field(..., min_length=1, max_length=20)
-    country_code: str = Field(..., min_length=2, max_length=3)
+    city: str = Field(..., min_length=1, max_length=100)
 
 
 class RiskFactor(BaseModel):

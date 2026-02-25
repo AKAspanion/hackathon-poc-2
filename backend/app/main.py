@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Weather Agent API",
-    description="Supply chain weather risk for manufacturing: location by pincode + country code, multi-factor risk and mitigation suggestions.",
+    description="Supply chain weather risk for manufacturing: location by city, multi-factor risk and mitigation suggestions.",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -41,7 +41,7 @@ async def root():
         "service": "weather-agent",
         "docs": "/docs",
         "health": "/api/v1/health",
-        "weather_risk": "GET /api/v1/weather/risk?pincode=...&country_code=...",
+        "weather_risk": "GET /api/v1/weather/risk?city=...",
     }
 
 

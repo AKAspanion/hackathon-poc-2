@@ -56,16 +56,15 @@ async def health():
 
 
 @router.get("/weather/risk", response_model=WeatherRiskResponse)
-async def get_weather_risk(pincode: str, country_code: str):
-    pincode = pincode.strip()
-    country_code = country_code.strip()
+async def get_weather_risk(city: str):
+    city = city.strip()
 
-    state = await run_weather_risk_agent(pincode, country_code)
+    state = await run_weather_risk_agent(city)
     data = state.get("weather_data")
     if not data:
         raise HTTPException(
             status_code=502,
-            detail="Weather service unavailable or invalid location. Check WEATHER_API_KEY and try pincode,country (e.g. 110001,IN).",
+            detail="Weather service unavailable or invalid location. Check WEATHER_API_KEY and try city (e.g. New Delhi, London).",
         )
 
     location, weather = _normalize_current(data)

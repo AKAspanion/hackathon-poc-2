@@ -1,6 +1,6 @@
 # Weather Agent API — Supply Chain Risk (Manufacturing)
 
-Supply chain weather risk by location (pincode + country code). WeatherAPI.com, LangGraph, Ollama.
+Supply chain weather risk by city. WeatherAPI.com, LangGraph, Ollama.
 
 ## Run
 
@@ -15,7 +15,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 - Docs: http://localhost:8000/docs
 - Health: http://localhost:8000/api/v1/health
-- Weather risk: `GET /api/v1/weather/risk?pincode=110001&country_code=IN`
+- Weather risk: `GET /api/v1/weather/risk?city=New Delhi`
 
 ## Env
 

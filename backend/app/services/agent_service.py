@@ -11,7 +11,11 @@ from app.models.opportunity import Opportunity, OpportunityStatus
 from app.models.mitigation_plan import MitigationPlan
 from app.models.supply_chain_risk_score import SupplyChainRiskScore
 from app.services.oems import get_oem_by_id, get_all_oems
-from app.services.suppliers import get_all as get_suppliers
+from app.services.suppliers import (
+    get_all as get_suppliers,
+    get_risks_by_supplier,
+    get_swarm_summaries_by_supplier,
+)
 from app.services.risks import create_risk_from_dict
 from app.services.opportunities import create_opportunity_from_dict
 from app.services.mitigation_plans import create_plan_from_dict
@@ -25,6 +29,10 @@ from app.services.agent_orchestrator import (
 )
 from app.services.agent_types import OemScope
 from app.services.data_sources.manager import get_data_source_manager
+from app.services.websocket_manager import (
+    broadcast_agent_status,
+    broadcast_suppliers_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +175,29 @@ def _update_status(db: Session, status: str, task: str | None = None) -> None:
         db.commit()
 
 
+async def _broadcast_current_status(db: Session) -> None:
+    """
+    Build a lightweight status payload and broadcast it to websocket clients.
+    """
+    ent = get_status(db)
+    if not ent:
+        return
+    payload = {
+        "id": str(ent.id),
+        "status": ent.status,
+        "currentTask": ent.currentTask,
+        "lastProcessedData": ent.lastProcessedData,
+        "lastDataSource": ent.lastDataSource,
+        "errorMessage": ent.errorMessage,
+        "risksDetected": ent.risksDetected,
+        "opportunitiesIdentified": ent.opportunitiesIdentified,
+        "plansGenerated": ent.plansGenerated,
+        "lastUpdated": ent.lastUpdated.isoformat() if ent.lastUpdated else None,
+        "createdAt": ent.createdAt.isoformat() if ent.createdAt else None,
+    }
+    await broadcast_agent_status(payload)
+
+
 async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
     oem_id = UUID(scope["oemId"])
     manager = get_data_source_manager()
@@ -184,6 +215,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         AgentStatus.MONITORING.value,
         f"Fetching weather & news for OEM: {scope['oemName']}",
     )
+    await _broadcast_current_status(db)
     supplier_params = _build_data_source_params(scope)
     supplier_data = await manager.fetch_by_types(["weather", "news"], supplier_params)
     logger.info(
@@ -198,6 +230,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         AgentStatus.ANALYZING.value,
         f"Analyzing for OEM: {scope['oemName']}",
     )
+    await _broadcast_current_status(db)
     supplier_analysis = await analyze_data(supplier_data, scope)
     logger.info(
         "_run_analysis_for_oem: supplier analysis results "
@@ -211,6 +244,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         AgentStatus.PROCESSING.value,
         f"Saving supplier results for OEM: {scope['oemName']}",
     )
+    await _broadcast_current_status(db)
     for r in supplier_analysis["risks"]:
         r["oemId"] = oem_id
         create_risk_from_dict(db, r)
@@ -224,6 +258,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         AgentStatus.MONITORING.value,
         "Fetching global news",
     )
+    await _broadcast_current_status(db)
     global_data = await manager.fetch_by_types(["news"], _build_global_news_params())
     global_result = await analyze_global_risk(global_data)
     logger.info(
@@ -241,6 +276,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         AgentStatus.MONITORING.value,
         f"Fetching shipping for OEM: {scope['oemName']}",
     )
+    await _broadcast_current_status(db)
     route_params = {"routes": supplier_params["routes"]}
     route_data = await manager.fetch_by_types(["traffic", "shipping"], route_params)
     shipping_result = await analyze_shipping_disruptions(route_data)
@@ -391,6 +427,33 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         opp_plans_created,
         scope["oemName"],
     )
+
+    # 8. Broadcast per-supplier snapshot so the dashboard can update scores and risks.
+    suppliers = get_suppliers(db, oem_id)
+    risk_map = get_risks_by_supplier(db)
+    swarm_map = get_swarm_summaries_by_supplier(db, oem_id)
+    suppliers_payload = [
+        {
+            "id": str(s.id),
+            "oemId": str(s.oemId) if s.oemId else None,
+            "name": s.name,
+            "location": s.location,
+            "city": s.city,
+            "country": s.country,
+            "region": s.region,
+            "commodities": s.commodities,
+            "metadata": s.metadata_,
+            "createdAt": s.createdAt.isoformat() if s.createdAt else None,
+            "updatedAt": s.updatedAt.isoformat() if s.updatedAt else None,
+            "riskSummary": risk_map.get(
+                s.name,
+                {"count": 0, "bySeverity": {}, "latest": None},
+            ),
+            "swarm": swarm_map.get(s.name),
+        }
+        for s in suppliers
+    ]
+    await broadcast_suppliers_snapshot(str(oem_id), suppliers_payload)
 
 
 def get_status(db: Session) -> AgentStatusEntity | None:

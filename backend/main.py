@@ -10,15 +10,7 @@ from app.database import Base, engine
 # Import all models so they are registered with Base.metadata before create_all
 import app.models  # noqa: F401
 
-from app.api.routes import (
-    app_routes,
-    oems,
-    risks,
-    opportunities,
-    mitigation_plans,
-    suppliers,
-    agent,
-)
+from app.api.routes import app_routes, oems, risks, opportunities, mitigation_plans, suppliers, agent, ws
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,6 +48,7 @@ app.include_router(opportunities.router)
 app.include_router(mitigation_plans.router)
 app.include_router(suppliers.router)
 app.include_router(agent.router)
+app.include_router(ws.router)
 
 
 if __name__ == "__main__":

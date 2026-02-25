@@ -4,12 +4,15 @@ import { AgentStatus } from '@/components/AgentStatus';
 import { RisksList } from '@/components/RisksList';
 import { OpportunitiesList } from '@/components/OpportunitiesList';
 import { MitigationPlansList } from '@/components/MitigationPlansList';
+import { SuppliersList } from '@/components/SuppliersList';
 import { AppNav } from '@/components/AppNav';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { agentApi } from '@/lib/api';
+import { useWebSocketNotifications } from '@/hooks/useWebSocketNotifications';
 
 export default function Home() {
   const queryClient = useQueryClient();
+  useWebSocketNotifications();
   const triggerMutation = useMutation({
     mutationFn: agentApi.triggerAnalysis,
     onSuccess: () => {
@@ -55,6 +58,10 @@ export default function Home() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6">
           <AgentStatus />
+        </div>
+
+        <div className="mb-6">
+          <SuppliersList />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

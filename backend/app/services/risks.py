@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
 from app.models.risk import Risk, RiskSeverity, RiskStatus
+from app.models.supplier import Supplier
 from app.schemas.risk import CreateRisk, UpdateRisk
 
 
@@ -84,7 +85,45 @@ def _sanitize_numeric(value) -> Decimal | None:
     return num
 
 
+def _resolve_supplier_id(
+    db: Session,
+    oem_id: UUID | None,
+    affected_supplier: str | list | None,
+) -> tuple[UUID | None, str | None]:
+    """
+    Best-effort mapping from affectedSupplier (string or list from LLM)
+    to a concrete Supplier row for the given OEM.
+
+    Returns (supplier_id, normalized_supplier_name).
+    """
+    if not oem_id or not affected_supplier:
+        return None, None
+
+    name: str | None
+    if isinstance(affected_supplier, (list, tuple)):
+        name = str(affected_supplier[0]) if affected_supplier else None
+    else:
+        name = str(affected_supplier)
+
+    if not name:
+        return None, None
+
+    supplier = (
+        db.query(Supplier)
+        .filter(Supplier.oemId == oem_id, Supplier.name == name)
+        .first()
+    )
+    return (supplier.id if supplier else None), name
+
+
 def create_risk_from_dict(db: Session, data: dict) -> Risk:
+    oem_id = data.get("oemId")
+    supplier_id, supplier_name = _resolve_supplier_id(
+        db,
+        oem_id,
+        data.get("affectedSupplier"),
+    )
+
     risk = Risk(
         title=data["title"],
         description=data["description"],
@@ -93,10 +132,11 @@ def create_risk_from_dict(db: Session, data: dict) -> Risk:
         sourceType=data.get("sourceType", "unknown"),
         sourceData=data.get("sourceData"),
         affectedRegion=data.get("affectedRegion"),
-        affectedSupplier=data.get("affectedSupplier"),
+        affectedSupplier=supplier_name or data.get("affectedSupplier"),
         estimatedImpact=data.get("estimatedImpact"),
         estimatedCost=_sanitize_numeric(data.get("estimatedCost")),
-        oemId=data.get("oemId"),
+        oemId=oem_id,
+        supplierId=supplier_id,
     )
     db.add(risk)
     db.commit()

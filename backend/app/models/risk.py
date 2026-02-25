@@ -48,9 +48,18 @@ class Risk(Base):
     sourceType = Column(String, nullable=False)
     sourceData = Column(JSONB, nullable=True)
     affectedRegion = Column(String, nullable=True)
+    # Human-readable supplier name(s) from the LLM output (for display/trace).
     affectedSupplier = Column(String, nullable=True)
     estimatedImpact = Column(String, nullable=True)
     estimatedCost = Column(Numeric(10, 2), nullable=True)
+
+    # Strong association to Supplier so risks are always in relation to a supplier.
+    supplierId = Column(
+        UUID(as_uuid=True),
+        ForeignKey("suppliers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     oemId = Column(UUID(as_uuid=True), nullable=True)
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
     updatedAt = Column(
@@ -60,4 +69,9 @@ class Risk(Base):
         nullable=False,
     )
 
-    mitigation_plans = relationship("MitigationPlan", back_populates="risk", cascade="all, delete-orphan")
+    supplier = relationship("Supplier", back_populates="risks")
+    mitigation_plans = relationship(
+        "MitigationPlan",
+        back_populates="risk",
+        cascade="all, delete-orphan",
+    )

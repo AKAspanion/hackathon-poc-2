@@ -48,6 +48,10 @@ def list_suppliers(
                 "region": s.region,
                 "commodities": s.commodities,
                 "metadata": s.metadata_,
+                "latestRiskScore": float(s.latestRiskScore)
+                if s.latestRiskScore is not None
+                else None,
+                "latestRiskLevel": s.latestRiskLevel,
                 "createdAt": s.createdAt.isoformat() if s.createdAt else None,
                 "updatedAt": s.updatedAt.isoformat() if s.updatedAt else None,
             },
@@ -84,6 +88,10 @@ def get_supplier_by_id(
             "region": supplier.region,
             "commodities": supplier.commodities,
             "metadata": supplier.metadata_,
+            "latestRiskScore": float(supplier.latestRiskScore)
+            if supplier.latestRiskScore is not None
+            else None,
+            "latestRiskLevel": supplier.latestRiskLevel,
             "createdAt": supplier.createdAt.isoformat() if supplier.createdAt else None,
             "updatedAt": supplier.updatedAt.isoformat() if supplier.updatedAt else None,
         },

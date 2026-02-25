@@ -140,6 +140,11 @@ export interface Oem {
   id: string;
   name: string;
   email: string;
+  location?: string | null;
+  city?: string | null;
+  country?: string | null;
+  region?: string | null;
+  metadata?: Record<string, string> | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -153,6 +158,8 @@ export interface Supplier {
   region?: string | null;
   commodities?: string | null;
   metadata?: Record<string, string> | null;
+  latestRiskScore?: number | null;
+  latestRiskLevel?: SwarmRiskLevel | null;
   createdAt: string;
   updatedAt: string;
   riskSummary: SupplierRiskSummary;

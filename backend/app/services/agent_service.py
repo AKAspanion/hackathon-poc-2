@@ -10,6 +10,7 @@ from app.models.risk import Risk, RiskStatus
 from app.models.opportunity import Opportunity, OpportunityStatus
 from app.models.mitigation_plan import MitigationPlan
 from app.models.supply_chain_risk_score import SupplyChainRiskScore
+from app.models.supplier import Supplier
 from app.services.oems import get_oem_by_id, get_all_oems
 from app.services.suppliers import (
     get_all as get_suppliers,
@@ -166,6 +167,19 @@ def _compute_risk_score(risks: list) -> tuple[float, dict, dict]:
     return overall, breakdown, severity_counts
 
 
+def _score_to_level(score: float) -> str:
+    """
+    Map final numeric score to a discrete risk band.
+    """
+    if score <= 25:
+        return "LOW"
+    if score <= 50:
+        return "MEDIUM"
+    if score <= 75:
+        return "HIGH"
+    return "CRITICAL"
+
+
 def _update_status(db: Session, status: str, task: str | None = None) -> None:
     ent = db.query(AgentStatusEntity).first()
     if ent:
@@ -289,7 +303,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         r["oemId"] = oem_id
         create_risk_from_dict(db, r)
 
-    # 4. Risk score
+    # 4. Risk score (OEM-level)
     all_risks = (
         db.query(Risk)
         .filter(Risk.oemId == oem_id, Risk.status == RiskStatus.DETECTED)
@@ -312,6 +326,31 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         scope["oemName"],
         len(all_risks),
     )
+
+    # 4b. Per-supplier risk scores (supplier-level)
+    suppliers = (
+        db.query(Supplier)
+        .filter(Supplier.oemId == oem_id)
+        .all()
+    )
+    for supplier in suppliers:
+        supplier_risks = (
+            db.query(Risk)
+            .filter(
+                Risk.oemId == oem_id,
+                Risk.status == RiskStatus.DETECTED,
+                Risk.supplierId == supplier.id,
+            )
+            .all()
+        )
+        if not supplier_risks:
+            supplier.latestRiskScore = None
+            supplier.latestRiskLevel = None
+            continue
+        supplier_score, _, _ = _compute_risk_score(supplier_risks)
+        supplier.latestRiskScore = supplier_score
+        supplier.latestRiskLevel = _score_to_level(float(supplier_score))
+    db.commit()
 
     # 5. Mitigation plans by supplier
     risks_by_supplier: dict[str, list[Risk]] = {}

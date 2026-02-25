@@ -5,6 +5,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.database import Base, engine
+
+# Import all models so they are registered with Base.metadata before create_all
+import app.models  # noqa: F401
+
 from app.api.routes import (
     app_routes,
     oems,
@@ -14,7 +19,6 @@ from app.api.routes import (
     suppliers,
     agent,
 )
-from app.database import Base, engine
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

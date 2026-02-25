@@ -1,5 +1,6 @@
 import logging
 from app.services.data_sources.base import BaseDataSource, DataSourceResult
+from app.services.external_api_cache import cached_get
 from app.config import settings
 import httpx
 
@@ -32,7 +33,8 @@ class NewsDataSource(BaseDataSource):
             try:
                 async with httpx.AsyncClient() as client:
                     for keyword in keywords:
-                        r = await client.get(
+                        r = await cached_get(
+                            client,
                             f"{BASE_URL}/everything",
                             params={
                                 "q": keyword,

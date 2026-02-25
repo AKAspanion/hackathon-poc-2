@@ -1,10 +1,10 @@
 import logging
 from app.services.data_sources.base import BaseDataSource, DataSourceResult
+from app.services.external_api_cache import cached_get
 from app.config import settings
 import httpx
 
 logger = logging.getLogger(__name__)
-PLACEHOLDER_KEY = "your_openweather_api_key_here"
 BASE_URL = "https://api.openweathermap.org/data/2.5"
 
 
@@ -12,7 +12,7 @@ class WeatherDataSource(BaseDataSource):
     def __init__(self, config: dict | None = None):
         super().__init__(config)
         self._api_key = (config or {}).get("apiKey") or settings.weather_api_key or ""
-        if not self._api_key or self._api_key == PLACEHOLDER_KEY:
+        if not self._api_key:
             self._api_key = ""
             logger.warning(
                 "Weather API key not configured. Set WEATHER_API_KEY in .env. Using mock data."
@@ -50,7 +50,8 @@ class WeatherDataSource(BaseDataSource):
             for city in cities:
                 try:
                     if self._api_key:
-                        r = await client.get(
+                        r = await cached_get(
+                            client,
                             f"{BASE_URL}/weather",
                             params={"q": city, "appid": self._api_key, "units": "metric"},
                             timeout=10.0,

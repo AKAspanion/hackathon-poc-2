@@ -5,6 +5,7 @@ from app.models.mitigation_plan import MitigationPlan, PlanStatus
 from app.models.supplier import Supplier
 from app.models.agent_status import AgentStatusEntity, AgentStatus
 from app.models.supply_chain_risk_score import SupplyChainRiskScore
+from app.models.external_api_log import ExternalApiLog
 
 __all__ = [
     "Oem",
@@ -20,4 +21,5 @@ __all__ = [
     "AgentStatusEntity",
     "AgentStatus",
     "SupplyChainRiskScore",
+    "ExternalApiLog",
 ]

@@ -11,7 +11,9 @@ BASE_URL = "https://newsapi.org/v2"
 class NewsDataSource(BaseDataSource):
     def __init__(self, config: dict | None = None):
         super().__init__(config)
-        self._api_key = (config or {}).get("apiKey") or settings.news_api_key or ""
+        self._api_key = (
+            (config or {}).get("apiKey") or settings.news_api_key or ""
+        )
         if not self._api_key:
             logger.warning("News API key not configured. Using mock data.")
 
@@ -26,7 +28,10 @@ class NewsDataSource(BaseDataSource):
 
     async def fetch_data(self, params: dict | None = None) -> list[DataSourceResult]:
         keywords = (params or {}).get("keywords") or [
-            "supply chain", "manufacturing", "logistics", "shipping"
+            "supply chain",
+            "manufacturing",
+            "logistics",
+            "shipping",
         ]
         results = []
         if self._api_key:
@@ -43,6 +48,7 @@ class NewsDataSource(BaseDataSource):
                                 "pageSize": 5,
                             },
                             timeout=10.0,
+                            service="news",
                         )
                         if r.status_code == 200:
                             data = r.json()
@@ -62,15 +68,21 @@ class NewsDataSource(BaseDataSource):
             for article in [
                 {
                     "title": "Supply Chain Disruption in Southeast Asia",
-                    "description": "Major shipping routes affected by weather conditions",
+                    "description": (
+                        "Major shipping routes affected by weather conditions"
+                    ),
                     "source": "Supply Chain News",
-                    "publishedAt": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                    "publishedAt": __import__("datetime").datetime.utcnow()
+                    .isoformat()
+                    + "Z",
                 },
                 {
                     "title": "Manufacturing Plant Closure Announced",
                     "description": "Factory shutdown due to supplier issues",
                     "source": "Manufacturing Today",
-                    "publishedAt": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+                    "publishedAt": __import__("datetime").datetime.utcnow()
+                    .isoformat()
+                    + "Z",
                 },
             ]:
                 results.append(self._create_result(article))

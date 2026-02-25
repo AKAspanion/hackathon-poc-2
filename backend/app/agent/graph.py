@@ -262,7 +262,7 @@ async def run_weather_risk_agent(pincode: str, country_code: str) -> dict[str, A
         risk_dict = _risk_store.get(key)
 
     llm_summary = None
-    for m in reversed[Any](messages):
+    for m in reversed(messages):
         if isinstance(m, AIMessage) and m.content and not m.tool_calls:
             llm_summary = (m.content or "").strip() or None
             break

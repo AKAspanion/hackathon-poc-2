@@ -13,15 +13,15 @@ A "Global Watchtower" for manufacturing logistics that continuously monitors rea
 The project is split into two separate applications:
 
 ### Backend (`/backend`)
-- **Framework**: NestJS
-- **Database**: PostgreSQL with TypeORM
-- **AI/ML**: LangChain, Anthropic Claude, LangGraph
+- **Framework**: FastAPI (Python 3.11+)
+- **Database**: PostgreSQL with SQLAlchemy
+- **AI/ML**: Anthropic Claude or Ollama (LLM), custom orchestrator
 - **Features**:
   - Generic data source connectors (Weather, News, Traffic, Market Trends)
   - AI-powered risk detection and opportunity identification
   - Automatic mitigation plan generation
-  - RESTful API for frontend integration
-  - Scheduled monitoring (every 5 minutes)
+  - RESTful API for frontend integration (JWT-protected)
+  - Manually triggered analysis per OEM via `/agent/trigger`
 
 ### Frontend (`/frontend`)
 - **Framework**: Next.js 16 with App Router
@@ -32,7 +32,7 @@ The project is split into two separate applications:
   - Agent status monitoring
   - Risks and opportunities visualization
   - Mitigation plans display
-  - Auto-refresh every 30 seconds
+  - Live updates via WebSocket (no polling)
 
 ## 🚀 Quick Start
 
@@ -47,24 +47,25 @@ The project is split into two separate applications:
 ```bash
 cd backend
 
-# Install dependencies
-yarn install
+# Create and activate virtualenv
+python3 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# Set up PostgreSQL database
-createdb supply_chain
+# Install dependencies
+pip install -r requirements.txt
 
 # Configure environment variables
 cp .env.example .env
 # Edit .env with your configuration:
 # - Database credentials
-# - ANTHROPIC_API_KEY (for AI analysis)
+# - ANTHROPIC_API_KEY (for AI analysis) or configure Ollama
 # - Optional: WEATHER_API_KEY, NEWS_API_KEY
 
-# Run migrations (auto-sync in development)
-yarn start:dev
+# Run the API
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The backend will run on `http://localhost:3001`
+The backend will run on `http://localhost:8000`
 
 ### Frontend Setup
 
@@ -76,7 +77,7 @@ yarn install
 
 # Configure environment variables
 cp .env.example .env
-# Edit .env with backend URL (default: http://localhost:3001)
+# Edit .env with backend URL (default: http://localhost:8000)
 
 # Run development server
 yarn dev
@@ -93,7 +94,7 @@ The frontend will run on `http://localhost:3000`
 - **Market**: Commodity and market trends (mock, ready for real API)
 
 ### Agent Capabilities
-- **Continuous Monitoring**: Automatically monitors all data sources every 5 minutes
+- **On-demand Monitoring**: Each run fetches fresh data across all sources for the current OEM (triggered manually)
 - **Risk Detection**: Identifies supply chain risks with severity levels (low, medium, high, critical)
 - **Opportunity Identification**: Detects optimization opportunities (cost saving, time saving, quality improvement, etc.)
 - **Mitigation Planning**: AI-generated action plans for risks and opportunities
@@ -105,6 +106,18 @@ The frontend will run on `http://localhost:3000`
 - **Opportunities View**: Identified opportunities with type and value
 - **Mitigation Plans**: Generated action plans with status tracking
 - **Manual Trigger**: Ability to manually trigger analysis
+
+## 🧠 High-level workflow
+
+1. **OEM signs in** on the frontend with email only (no password). The backend creates or finds the OEM and returns a JWT; all subsequent API calls are scoped to this OEM.
+2. **Suppliers are onboarded** by uploading a CSV to `/suppliers/upload`. These suppliers (names, locations, commodities) define the OEM’s supply network.
+3. **User clicks "Trigger Analysis"** on the dashboard, which calls `POST /agent/trigger` for the current OEM.
+4. **Agent run (backend)**:
+   - Builds an OEM scope from OEM + suppliers (cities, regions, commodities, routes).
+   - Fetches weather, news, traffic, market, and shipping data via pluggable data sources.
+   - Uses the LLM orchestrator to turn raw data into risks, opportunities, and mitigation plans.
+   - Computes OEM and per-supplier risk scores and stores everything in PostgreSQL.
+5. **Dashboard updates in real time**: the backend pushes agent status and supplier snapshots over WebSocket; TanStack Query syncs the React UI without manual refresh.
 
 ## 🔧 Configuration
 
@@ -125,14 +138,14 @@ WEATHER_API_KEY=your_key_here (optional)
 NEWS_API_KEY=your_key_here (optional)
 
 # Application
-PORT=3001
+PORT=8000
 NODE_ENV=development
 FRONTEND_URL=http://localhost:3000
 ```
 
 #### Frontend (`.env`)
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 ## 📡 API Endpoints
@@ -184,56 +197,64 @@ yarn start        # Production server
 ```
 hackathon-2/
 ├── backend/
-│   ├── src/
-│   │   ├── agent/              # Agent orchestration
-│   │   ├── data-sources/       # Data source connectors
-│   │   ├── database/           # Database entities
-│   │   ├── risks/              # Risks module
-│   │   ├── opportunities/      # Opportunities module
-│   │   └── mitigation-plans/   # Mitigation plans module
-│   └── package.json
+│   ├── app/
+│   │   ├── api/                # FastAPI routes (REST + WebSocket)
+│   │   ├── models/             # SQLAlchemy models
+│   │   ├── services/           # Agent logic, data sources, orchestrator
+│   │   ├── schemas/            # Pydantic schemas
+│   │   ├── config.py           # Settings (env-backed)
+│   │   └── database.py         # DB session / engine
+│   ├── requirements.txt
+│   └── README.md
 ├── frontend/
 │   ├── app/                    # Next.js app directory
 │   ├── components/             # React components
 │   ├── lib/                    # Utilities and API client
-│   └── package.json
+│   └── public/                 # Static assets
 └── README.md
 ```
 
 ## 🔌 Adding New Data Sources
 
-To add a new data source:
+To add a new data source in the Python backend:
 
-1. Create a new service implementing `IDataSource` interface:
-```typescript
-export class NewDataSourceService extends BaseDataSource {
-  getType(): string {
-    return 'new-source';
-  }
-  
-  async fetchData(params?: Record<string, any>): Promise<DataSourceResult[]> {
-    // Implementation
-  }
-  
-  // ... other methods
-}
+1. **Create a new data source class** in `backend/app/services/data_sources/`, extending `BaseDataSource`:
+
+```python
+from app.services.data_sources.base import BaseDataSource, DataSourceResult
+
+
+class NewDataSource(BaseDataSource):
+    def get_type(self) -> str:
+        # Unique key used in the manager, e.g. "new-source"
+        return "new-source"
+
+    async def _on_initialize(self) -> None:
+        # Optional: warm up clients, read config, etc.
+        pass
+
+    async def is_available(self) -> bool:
+        # Return False to temporarily disable this source
+        return True
+
+    async def fetch_data(self, params: dict | None = None) -> list[DataSourceResult]:
+        # Fetch from external API or generate mock data
+        payload = {"example": "value"}
+        return [self._create_result(payload)]
 ```
 
-2. Register it in `DataSourceModule`:
-```typescript
-@Module({
-  providers: [
-    // ... existing
-    NewDataSourceService,
-  ],
-  exports: [
-    // ... existing
-    NewDataSourceService,
-  ],
-})
+2. **Register it with the `DataSourceManager`** in `backend/app/services/data_sources/manager.py`:
+
+```python
+from app.services.data_sources.new_source import NewDataSource
+
+# inside DataSourceManager.initialize()
+new_source = NewDataSource()
+await new_source.initialize({})
+self._sources[new_source.get_type()] = new_source
 ```
 
-3. The agent will automatically start monitoring it!
+3. The agent can now fetch it by type (e.g. `["weather", "new-source"]`) and include it in the LLM analysis.
 
 ## 🎨 UI Features
 
@@ -245,10 +266,10 @@ export class NewDataSourceService extends BaseDataSource {
 
 ## 📝 Notes
 
-- The system works with mock data if API keys are not configured
-- Database schema is auto-synced in development mode
-- Agent runs automatically every 5 minutes via cron job
-- All AI analysis uses Anthropic Claude (fallback to mock if API key not set)
+- The system works with mock data if API keys are not configured.
+- Database schema is auto-synced in development mode.
+- Agent runs **on demand** when `/agent/trigger` is called (e.g. from the dashboard). You can wire this into an external scheduler or cron if you want fully automatic cycles.
+- All AI analysis uses Anthropic Claude or another configured LLM provider (fallback to mock if API key is not set).
 
 ## 🤝 Contributing
 

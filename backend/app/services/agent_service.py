@@ -10,7 +10,6 @@ from app.models.risk import Risk, RiskStatus
 from app.models.opportunity import Opportunity, OpportunityStatus
 from app.models.mitigation_plan import MitigationPlan
 from app.models.supply_chain_risk_score import SupplyChainRiskScore
-from app.models.supplier import Supplier
 from app.services.oems import get_oem_by_id, get_all_oems
 from app.services.suppliers import (
     get_all as get_suppliers,
@@ -65,12 +64,24 @@ def get_oem_scope(db: Session, oem_id: UUID) -> OemScope | None:
     if not oem:
         return None
     suppliers = get_suppliers(db, oem_id)
-    supplier_names = []
-    locations = []
-    cities = []
-    countries = []
-    regions = []
+    supplier_names: list[str] = []
+    locations: list[str] = []
+    cities: list[str] = []
+    countries: list[str] = []
+    regions: list[str] = []
     commodities = set()
+
+    # Seed scope with OEM's own location so weather/news/shipping analysis
+    # always considers the OEM side of the network.
+    if getattr(oem, "location", None):
+        locations.append(oem.location)  # type: ignore[arg-type]
+    if getattr(oem, "city", None):
+        cities.append(oem.city)  # type: ignore[arg-type]
+    if getattr(oem, "country", None):
+        countries.append(oem.country)  # type: ignore[arg-type]
+    if getattr(oem, "region", None):
+        regions.append(oem.region)  # type: ignore[arg-type]
+
     for s in suppliers:
         if s.name:
             supplier_names.append(s.name)
@@ -115,11 +126,18 @@ def _build_data_source_params(scope: OemScope) -> dict:
         "grain",
         "semiconductors",
     ]
-    if len(cities) >= 2:
-        routes = [{"origin": cities[0], "destination": cities[1]}]
-        if len(cities) >= 4:
-            routes.append({"origin": cities[2], "destination": cities[3]})
-    else:
+
+    # Model logistics explicitly as routes from each supplier city to OEM city.
+    # By construction in get_oem_scope, the first city (if present) is the OEM.
+    routes: list[dict] = []
+    if cities:
+        oem_city = cities[0]
+        supplier_cities = cities[1:] or [oem_city]
+        for c in supplier_cities[:10]:
+            if c == oem_city:
+                continue
+            routes.append({"origin": c, "destination": oem_city})
+    if not routes:
         routes = [{"origin": "New York", "destination": "Los Angeles"}]
     keywords = (
         ["supply chain", "manufacturing", "logistics"]
@@ -206,10 +224,55 @@ async def _broadcast_current_status(db: Session) -> None:
         "risksDetected": ent.risksDetected,
         "opportunitiesIdentified": ent.opportunitiesIdentified,
         "plansGenerated": ent.plansGenerated,
-        "lastUpdated": ent.lastUpdated.isoformat() if ent.lastUpdated else None,
+        "lastUpdated": ent.lastUpdated.isoformat()
+        if ent.lastUpdated
+        else None,
         "createdAt": ent.createdAt.isoformat() if ent.createdAt else None,
     }
     await broadcast_agent_status(payload)
+
+
+async def _broadcast_suppliers_for_oem(db: Session, oem_id: UUID) -> None:
+    """
+    Broadcast the latest per-supplier snapshot for the given OEM.
+
+    This is safe to call multiple times during a run; it always recomputes
+    based on the current database state.
+    """
+    suppliers = get_suppliers(db, oem_id)
+    if not suppliers:
+        return
+    risk_map = get_risks_by_supplier(db)
+    swarm_map = get_swarm_summaries_by_supplier(db, oem_id)
+    suppliers_payload = [
+        {
+            "id": str(s.id),
+            "oemId": str(s.oemId) if s.oemId else None,
+            "name": s.name,
+            "location": s.location,
+            "city": s.city,
+            "country": s.country,
+            "region": s.region,
+            "commodities": s.commodities,
+            "metadata": s.metadata_,
+            "latestRiskScore": (
+                float(s.latestRiskScore)
+                if getattr(s, "latestRiskScore", None) is not None
+                else None
+            ),
+            "latestRiskLevel": getattr(s, "latestRiskLevel", None),
+            "createdAt": s.createdAt.isoformat() if s.createdAt else None,
+            "updatedAt": s.updatedAt.isoformat() if s.updatedAt else None,
+            "riskSummary": risk_map.get(s.name, {
+                "count": 0,
+                "bySeverity": {},
+                "latest": None,
+            }),
+            "swarm": swarm_map.get(s.name),
+        }
+        for s in suppliers
+    ]
+    await broadcast_suppliers_snapshot(str(oem_id), suppliers_payload)
 
 
 async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
@@ -266,6 +329,10 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         o["oemId"] = oem_id
         create_opportunity_from_dict(db, o)
 
+    # Broadcast after supplier-scoped risks/opportunities have been stored so
+    # the dashboard can show early signals per supplier.
+    await _broadcast_suppliers_for_oem(db, oem_id)
+
     # 2. Global risk
     _update_status(
         db,
@@ -283,6 +350,9 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
     for r in global_result["risks"]:
         r["oemId"] = oem_id
         create_risk_from_dict(db, r)
+
+    # Broadcast again after global risks have been incorporated.
+    await _broadcast_suppliers_for_oem(db, oem_id)
 
     # 3. Shipping routes
     _update_status(
@@ -328,11 +398,7 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
     )
 
     # 4b. Per-supplier risk scores (supplier-level)
-    suppliers = (
-        db.query(Supplier)
-        .filter(Supplier.oemId == oem_id)
-        .all()
-    )
+    suppliers = get_suppliers(db, oem_id)
     for supplier in suppliers:
         supplier_risks = (
             db.query(Risk)
@@ -351,6 +417,9 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         supplier.latestRiskScore = supplier_score
         supplier.latestRiskLevel = _score_to_level(float(supplier_score))
     db.commit()
+
+    # Broadcast after supplier-level risk scores have been updated.
+    await _broadcast_suppliers_for_oem(db, oem_id)
 
     # 5. Mitigation plans by supplier
     risks_by_supplier: dict[str, list[Risk]] = {}
@@ -467,32 +536,8 @@ async def _run_analysis_for_oem(db: Session, scope: OemScope) -> None:
         scope["oemName"],
     )
 
-    # 8. Broadcast per-supplier snapshot so the dashboard can update scores and risks.
-    suppliers = get_suppliers(db, oem_id)
-    risk_map = get_risks_by_supplier(db)
-    swarm_map = get_swarm_summaries_by_supplier(db, oem_id)
-    suppliers_payload = [
-        {
-            "id": str(s.id),
-            "oemId": str(s.oemId) if s.oemId else None,
-            "name": s.name,
-            "location": s.location,
-            "city": s.city,
-            "country": s.country,
-            "region": s.region,
-            "commodities": s.commodities,
-            "metadata": s.metadata_,
-            "createdAt": s.createdAt.isoformat() if s.createdAt else None,
-            "updatedAt": s.updatedAt.isoformat() if s.updatedAt else None,
-            "riskSummary": risk_map.get(
-                s.name,
-                {"count": 0, "bySeverity": {}, "latest": None},
-            ),
-            "swarm": swarm_map.get(s.name),
-        }
-        for s in suppliers
-    ]
-    await broadcast_suppliers_snapshot(str(oem_id), suppliers_payload)
+    # 8. Final broadcast so dashboard cards reflect the full analysis run.
+    await _broadcast_suppliers_for_oem(db, oem_id)
 
 
 def get_status(db: Session) -> AgentStatusEntity | None:
@@ -524,13 +569,20 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
             if not scope:
                 logger.warning("OEM %s not found or no scope", oem_id)
                 return
-            _update_status(db, AgentStatus.MONITORING.value, f"Manual run for OEM: {scope['oemName']}")
+            _update_status(
+                db,
+                AgentStatus.MONITORING.value,
+                f"Manual run for OEM: {scope['oemName']}",
+            )
             asyncio.run(_run_analysis_for_oem(db, scope))
             ent = _ensure_agent_status(db)
             ent.risksDetected = db.query(Risk).count()
             ent.opportunitiesIdentified = db.query(Opportunity).count()
             ent.plansGenerated = db.query(MitigationPlan).count()
-            ent.lastProcessedData = {"timestamp": datetime.utcnow().isoformat(), "oemsProcessed": [scope["oemName"]]}
+            ent.lastProcessedData = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "oemsProcessed": [scope["oemName"]],
+            }
             db.commit()
             _update_status(db, AgentStatus.IDLE.value, "Manual analysis completed")
         else:
@@ -548,7 +600,10 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
             ent.risksDetected = db.query(Risk).count()
             ent.opportunitiesIdentified = db.query(Opportunity).count()
             ent.plansGenerated = db.query(MitigationPlan).count()
-            ent.lastProcessedData = {"timestamp": datetime.utcnow().isoformat(), "oemsProcessed": [o.name for o in oems]}
+            ent.lastProcessedData = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "oemsProcessed": [o.name for o in oems],
+            }
             db.commit()
             _update_status(db, AgentStatus.IDLE.value, "Monitoring cycle completed")
     except Exception as e:
@@ -557,7 +612,11 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
             db.rollback()
         except Exception:
             pass
-        _update_status(db, AgentStatus.ERROR.value, f"Error: {e}")
+        _update_status(
+            db,
+            AgentStatus.ERROR.value,
+            f"Error: {e}",
+        )
     finally:
         _is_running = False
 

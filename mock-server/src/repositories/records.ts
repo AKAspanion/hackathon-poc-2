@@ -1,4 +1,4 @@
-import type { PrismaClient, Record as RecordModel } from "@prisma/client";
+import type { PrismaClient, Record as RecordModel } from "../../src/.prisma/client";
 import type { ListOptions } from "../types";
 
 const PATH_SEGMENT_REGEX = /^[a-zA-Z0-9_]+$/;

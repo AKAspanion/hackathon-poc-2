@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../src/.prisma/client";
 
 export interface CreateCollectionInput {
   name: string;

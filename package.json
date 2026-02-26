@@ -2,6 +2,16 @@
   "name": "hackathon-2",
   "version": "0.0.1",
   "description": "All code for hackathon",
+  "scripts": {
+    "dev:backend": "sh backend/start.sh --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "start:mock-server": "npm run dev --prefix mock-server",
+    "start:mock-server-dashboard": "npm run dev --prefix mock-server-dashboard",
+    "start:mock": "concurrently -n mock,dashboard -c blue,magenta \"npm run start:mock-server\" \"npm run start:mock-server-dashboard\"",
+    "dev:mock-server": "npm run dev --prefix mock-server",
+    "dev:mock-server-dashboard": "npm run dev --prefix mock-server-dashboard",
+    "dev:mock": "concurrently -n mock,dashboard -c blue,magenta \"npm run dev:mock-server\" \"npm run dev:mock-server-dashboard\""
+  },
   "homepage": "https://github.com/AKAspanion/hackathon-poc-2#readme",
   "bugs": {
     "url": "https://github.com/AKAspanion/hackathon-poc-2/issues"
@@ -17,7 +27,7 @@
   "directories": {
     "doc": "docs"
   },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "devDependencies": {
+    "concurrently": "^9.1.0"
   }
 }

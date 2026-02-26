@@ -1,4 +1,4 @@
-import type { PrismaClient, Collection } from "@prisma/client";
+import type { PrismaClient, Collection } from "../../src/.prisma/client";
 import type { CreateCollectionInput, UpdateCollectionInput, ListOptions } from "../types";
 
 const SLUG_REGEX = /^[a-z0-9_-]+$/;

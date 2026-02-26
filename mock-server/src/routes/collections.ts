@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
-import type { Collection } from "@prisma/client";
+import type { Collection } from "../../src/.prisma/client";
 import * as collectionsRepo from "../repositories/collections";
 import type { AppLocals } from "../types";
 import type { CreateCollectionInput, UpdateCollectionInput } from "../types";

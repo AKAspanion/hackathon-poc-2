@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
-import type { Collection, Record as RecordModel } from "@prisma/client";
+import type { Collection, Record as RecordModel } from "../../src/.prisma/client";
 import * as collectionsRepo from "../repositories/collections";
 import * as recordsRepo from "../repositories/records";
 import type { AppLocals } from "../types";

@@ -177,7 +177,7 @@ SEVERITY_WEIGHT: Dict[str, int] = {
 
 def _compute_agent_score(risks: List[Risk]) -> Tuple[float, Dict[str, int]]:
     """
-    Collapse multiple risks for a single agent into a 0–100 score plus per-severity counts.
+    Collapse multiple risks for a single agent into a 0-100 score plus per-severity counts.
     """
     if not risks:
         return 0.0, {}

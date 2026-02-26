@@ -1,9 +1,9 @@
 """Provider-agnostic LLM client for the trend-insights agent.
 
 Supported providers (selected via settings.llm_provider):
-  - "anthropic"  – Anthropic Claude (default)
-  - "openai"     – OpenAI ChatGPT (gpt-4o-mini by default)
-  - "ollama"     – Local Ollama
+  - "anthropic"  - Anthropic Claude (default)
+  - "openai"     - OpenAI ChatGPT (gpt-4o-mini by default)
+  - "ollama"     - Local Ollama
 
 If no valid key/endpoint is found the client falls back to a rule-based mock
 so the demo always returns useful output regardless of credentials.
@@ -170,7 +170,7 @@ class BaseLLMAdapter:
         for scope, result in zip(scopes, results):
             if isinstance(result, BaseException):
                 logger.warning(
-                    "Scope '%s' call failed: %s – using mock for that scope",
+                    "Scope '%s' call failed: %s - using mock for that scope",
                     scope,
                     result,
                 )
@@ -247,7 +247,7 @@ class OllamaAdapter(BaseLLMAdapter):
     provider = "ollama"
 
     def __init__(self):
-        import httpx as _httpx  # noqa: F401 – just verify it's importable
+        import httpx as _httpx  # noqa: F401 - just verify it's importable
 
         self.model = settings.ollama_model or "llama3"
         self._base_url = (settings.ollama_base_url or "http://localhost:11434").rstrip(
@@ -314,7 +314,7 @@ def get_llm_client() -> BaseLLMAdapter:
         logger.info("LLM client: OpenAI (fallback) model=%s", settings.openai_model)
         _cached_client = OpenAIAdapter()
     else:
-        logger.warning("No LLM credentials found – using rule-based MockAdapter.")
+        logger.warning("No LLM credentials found - using rule-based MockAdapter.")
         _cached_client = MockAdapter()
 
     return _cached_client
@@ -396,17 +396,17 @@ Relevant entities: {entities}
 Generate {count} predictive, actionable insights for scope="{scope}" only.
 
 Return ONLY a JSON array. Each element must have exactly these keys:
-  scope            – "{scope}"
-  entity_name      – specific material name, supplier name, or "Global"
-  risk_opportunity – "risk" | "opportunity"
-  title            – headline max 12 words
-  description      – 2-3 sentences grounded in the news above
-  predicted_impact – quantified impact (%, days, $)
-  time_horizon     – "short-term" | "medium-term" | "long-term"
-  severity         – "low" | "medium" | "high" | "critical"
-  recommended_actions – array of 3-5 specific action strings
-  confidence       – float 0.5–0.95
-  source_articles  – array of article titles used as evidence
+  scope            - "{scope}"
+  entity_name      - specific material name, supplier name, or "Global"
+  risk_opportunity - "risk" | "opportunity"
+  title            - headline max 12 words
+  description      - 2-3 sentences grounded in the news above
+  predicted_impact - quantified impact (%, days, $)
+  time_horizon     - "short-term" | "medium-term" | "long-term"
+  severity         - "low" | "medium" | "high" | "critical"
+  recommended_actions - array of 3-5 specific action strings
+  confidence       - float 0.5-0.95
+  source_articles  - array of article titles used as evidence
 
 No prose, no markdown fences. JSON array only."""
 
@@ -483,7 +483,7 @@ def _mock_insights(ctx: TrendContext) -> list[Insight]:
                     f"price volatility. Current market signals indicate potential supply tightening "
                     f"driven by geopolitical and demand-side pressures."
                 ),
-                predicted_impact=f"10–20% cost increase and {m.get('avg_lead_time_days', 30)}+ day lead-time extension.",
+                predicted_impact=f"10-20% cost increase and {m.get('avg_lead_time_days', 30)}+ day lead-time extension.",
                 time_horizon="short-term",
                 severity="high" if criticality in ("critical", "high") else "medium",
                 recommended_actions=[
@@ -514,7 +514,7 @@ def _mock_insights(ctx: TrendContext) -> list[Insight]:
                     f"Recent news signals point to operational or geopolitical pressures "
                     f"affecting delivery reliability from this supplier."
                 ),
-                predicted_impact="Delivery delays of 2–4 weeks and potential cost uplift of 5–15%.",
+                predicted_impact="Delivery delays of 2-4 weeks and potential cost uplift of 5-15%.",
                 time_horizon="short-term",
                 severity="high" if int(risk or 50) >= 70 else "medium",
                 recommended_actions=[
@@ -544,7 +544,7 @@ def _mock_insights(ctx: TrendContext) -> list[Insight]:
                     f"The macro trend '{trend}' poses a systemic risk to the manufacturer's supply chain. "
                     f"Industry data and recent news confirm the trend is active and escalating."
                 ),
-                predicted_impact="Broad supply chain disruption with 3–6 month recovery horizon.",
+                predicted_impact="Broad supply chain disruption with 3-6 month recovery horizon.",
                 time_horizon=g.get("time_horizon", "medium-term"),
                 severity=severity,
                 recommended_actions=[

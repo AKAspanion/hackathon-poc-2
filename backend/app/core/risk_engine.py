@@ -210,7 +210,7 @@ def _port_and_route_risk(current: dict[str, Any]) -> RiskFactor:
     )
     mitigation = None
     if level in (RiskLevel.HIGH, RiskLevel.CRITICAL):
-        mitigation = "Check port/airport advisories; plan for 3–5 day backlog and alternative routing or modes."
+        mitigation = "Check port/airport advisories; plan for 3-5 day backlog and alternative routing or modes."
     return RiskFactor(
         factor="port_and_route",
         level=level,

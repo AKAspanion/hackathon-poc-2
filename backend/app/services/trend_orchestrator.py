@@ -13,10 +13,10 @@ Workflow for a single run
 Exposed functions
 -----------------
 run_trend_insights_cycle(db, *, oem_name, excel_path) -> list[TrendInsight]
-    Synchronous wrapper (runs asyncio internally) – safe for APScheduler.
+    Synchronous wrapper (runs asyncio internally) - safe for APScheduler.
 
 run_trend_insights_cycle_async(db, *, oem_name, excel_path) -> list[TrendInsight]
-    Async version – call from FastAPI route handlers.
+    Async version - call from FastAPI route handlers.
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ async def run_trend_insights_cycle_async(
     oem_name = oem_name or _DEFAULT_OEM_NAME
     excel_path = excel_path or settings.trend_agent_excel_path or DEFAULT_EXCEL_PATH
 
-    logger.info("Trend insights cycle starting – oem=%s excel=%s", oem_name, excel_path)
+    logger.info("Trend insights cycle starting - oem=%s excel=%s", oem_name, excel_path)
 
     # 1. Load Excel data
     excel_data = load_all_from_excel(excel_path)
@@ -119,7 +119,7 @@ async def run_trend_insights_cycle_async(
     global_ctx = excel_data["global"]
 
     if not suppliers and not materials:
-        logger.warning("No data loaded from Excel – aborting trend cycle.")
+        logger.warning("No data loaded from Excel - aborting trend cycle.")
         return []
 
     # 2. Build queries
@@ -204,7 +204,7 @@ async def run_trend_insights_cycle_async(
     for row in saved:
         db.refresh(row)
 
-    logger.info("Trend insights cycle complete – saved %d insights.", len(saved))
+    logger.info("Trend insights cycle complete - saved %d insights.", len(saved))
     return saved
 
 

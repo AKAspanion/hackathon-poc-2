@@ -137,6 +137,41 @@ def _get_llm_invoke():
         logger.info(
             "LLM provider initialized: Ollama model=%s baseUrl=%s", model, base_url
         )
+    elif provider == "openai":
+        if settings.openai_api_key:
+            from openai import AsyncOpenAI  # type: ignore[import-untyped]
+
+            kwargs: dict[str, Any] = {"api_key": settings.openai_api_key}
+            if settings.openai_base_url:
+                kwargs["base_url"] = settings.openai_base_url
+            client = AsyncOpenAI(**kwargs)
+            model = settings.openai_model or "gpt-4o-mini"
+
+            async def _openai_invoke(prompt: str) -> str:
+                resp = await client.chat.completions.create(
+                    model=model,
+                    max_tokens=1024,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                choice = resp.choices[0] if resp.choices else None
+                if choice and choice.message and choice.message.content:
+                    return choice.message.content
+                return ""
+
+            _invoke_fn = _wrap_llm_invoke(_openai_invoke, "openai", model)
+            base_msg = (
+                f" base_url={settings.openai_base_url}" if settings.openai_base_url
+                else ""
+            )
+            logger.info(
+                "LLM provider initialized: OpenAI model=%s%s", model, base_msg
+            )
+        else:
+            logger.error(
+                "OPENAI_API_KEY not set and provider is openai; "
+                "no LLM will be used."
+            )
+            _invoke_fn = None
     else:
         if settings.anthropic_api_key:
             from anthropic import AsyncAnthropic

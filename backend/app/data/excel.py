@@ -29,7 +29,7 @@ def _row_to_dict(headers: list[str], row: tuple) -> dict[str, Any]:
 
 def _read_sheet(wb, sheet_name: str, required_cols: set[str]) -> list[dict]:
     if sheet_name not in wb.sheetnames:
-        logger.warning("Sheet '%s' not found in Excel file – skipping.", sheet_name)
+        logger.warning("Sheet '%s' not found in Excel file - skipping.", sheet_name)
         return []
     ws = wb[sheet_name]
     rows = list(ws.iter_rows(values_only=True))
@@ -58,7 +58,7 @@ def load_suppliers_from_excel(path: str | None = None) -> list[dict]:
 
     path = path or DEFAULT_EXCEL_PATH
     if not os.path.exists(path):
-        logger.warning("Excel file not found at %s – returning empty suppliers.", path)
+        logger.warning("Excel file not found at %s - returning empty suppliers.", path)
         return []
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     rows = _read_sheet(wb, "Suppliers", _SUPPLIER_REQUIRED)
@@ -73,7 +73,7 @@ def load_materials_from_excel(path: str | None = None) -> list[dict]:
 
     path = path or DEFAULT_EXCEL_PATH
     if not os.path.exists(path):
-        logger.warning("Excel file not found at %s – returning empty materials.", path)
+        logger.warning("Excel file not found at %s - returning empty materials.", path)
         return []
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     rows = _read_sheet(wb, "Materials", _MATERIAL_REQUIRED)
@@ -89,7 +89,7 @@ def load_global_context_from_excel(path: str | None = None) -> list[dict]:
     path = path or DEFAULT_EXCEL_PATH
     if not os.path.exists(path):
         logger.warning(
-            "Excel file not found at %s – returning empty global context.", path
+            "Excel file not found at %s - returning empty global context.", path
         )
         return []
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
@@ -105,7 +105,7 @@ def load_all_from_excel(path: str | None = None) -> dict[str, list[dict]]:
 
     path = path or DEFAULT_EXCEL_PATH
     if not os.path.exists(path):
-        logger.warning("Excel file not found at %s – returning empty data.", path)
+        logger.warning("Excel file not found at %s - returning empty data.", path)
         return {"suppliers": [], "materials": [], "global": []}
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     suppliers = _read_sheet(wb, "Suppliers", _SUPPLIER_REQUIRED)

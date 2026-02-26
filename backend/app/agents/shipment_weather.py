@@ -250,7 +250,7 @@ async def run_shipment_weather_agent(
             if i == 0
             else f"{oem_city} (Destination)"
             if i == transit_days - 1
-            else f"In Transit – Day {day_number}"
+            else f"In Transit - Day {day_number}"
         )
 
         weather_snap: DayWeatherSnapshot | None = None

@@ -7,11 +7,11 @@ POST /trend-insights/run
 
 GET  /trend-insights
     Query persisted insights, with filters:
-      scope       – material | supplier | global
-      entity_name – partial match (case-insensitive)
-      severity    – low | medium | high | critical
-      limit       – default 50, max 200
-      offset      – default 0
+      scope       - material | supplier | global
+      entity_name - partial match (case-insensitive)
+      severity    - low | medium | high | critical
+      limit       - default 50, max 200
+      offset      - default 0
 """
 
 from __future__ import annotations

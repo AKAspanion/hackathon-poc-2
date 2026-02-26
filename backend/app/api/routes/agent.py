@@ -65,7 +65,7 @@ def risk_score(
     oemId: UUID | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Latest risk score for the OEM (0–100). Computed after each analysis run."""
+    """Latest risk score for the OEM (0-100). Computed after each analysis run."""
     oid = oemId or oem.id
     score = get_latest_risk_score(db, oid)
     if not score:

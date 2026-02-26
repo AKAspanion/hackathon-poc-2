@@ -260,7 +260,7 @@ def _compute_risk_score(risks: list) -> tuple[float, dict, dict]:
     """
     Risk Analysis Agent:
 
-    - Normalize all risks onto a 0–100 scale using severity and domain weights.
+    - Normalize all risks onto a 0-100 scale using severity and domain weights.
     - Apply a non-linear escalation curve so many medium risks escalate faster
       than a simple linear sum.
     - Track per-severity counts and per-sourceType weighted contributions.

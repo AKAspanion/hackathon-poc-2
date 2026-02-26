@@ -97,7 +97,7 @@ export function ShipmentTimeline({ days }: ShipmentTimelineProps) {
                   <span className="font-medium">{d.weather.temp_c.toFixed(1)}°C</span>
                   {d.weather.min_temp_c != null && d.weather.max_temp_c != null && (
                     <span className="text-[11px] text-medium-gray">
-                      ({d.weather.min_temp_c.toFixed(0)}–{d.weather.max_temp_c.toFixed(0)})
+                      ({d.weather.min_temp_c.toFixed(0)}-{d.weather.max_temp_c.toFixed(0)})
                     </span>
                   )}
                 </div>

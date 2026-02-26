@@ -117,7 +117,7 @@ export function SuppliersList() {
                           <span className="font-medium">
                             {riskSummary.latest.severity.toUpperCase()}
                           </span>{' '}
-                          – {riskSummary.latest.title}
+                          - {riskSummary.latest.title}
                         </div>
                       )}
                     </div>

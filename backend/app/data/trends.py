@@ -46,7 +46,7 @@ class TrendDataSource(BaseDataSource):
         super().__init__(config)
         self._api_key: str = (config or {}).get("apiKey") or settings.news_api_key or ""
         if not self._api_key:
-            logger.info("NEWS_API_KEY not set – TrendDataSource will use mock data.")
+            logger.info("NEWS_API_KEY not set - TrendDataSource will use mock data.")
 
     def get_type(self) -> str:
         return "trends"
@@ -295,7 +295,7 @@ _MOCK_ARTICLES: dict[str, list[dict]] = {
             "title": "Chinese Steel Mills Cut Output Amid Energy Rationing",
             "summary": (
                 "Power grid constraints in Hebei and Shandong provinces force rolling production "
-                "cuts at major integrated mills. Overseas buyers facing 4–6 week delays on "
+                "cuts at major integrated mills. Overseas buyers facing 4-6 week delays on "
                 "confirmed orders."
             ),
             "source": "World Steel Association",

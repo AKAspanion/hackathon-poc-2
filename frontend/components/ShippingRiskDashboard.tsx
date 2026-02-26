@@ -96,7 +96,7 @@ export function ShippingRiskDashboard() {
     Math.max(0, Math.min(1, score)) * 360;
 
   return (
-    <main className="mx-auto grid max-w-6xl grid-cols-1 gap-6 p-6 lg:grid-cols-[minmax(280px,360px)_1fr]">
+    <main className="mx-auto grid grid-cols-1 gap-6 py-6 lg:grid-cols-[minmax(280px,360px)_1fr]">
       <section className="rounded-2xl border border-gray-700/80 bg-gray-800/90 p-4 shadow-xl">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-medium uppercase tracking-wider text-gray-400">

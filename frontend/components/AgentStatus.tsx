@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { agentApi, AgentStatus as AgentStatusType } from '@/lib/api';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -21,9 +21,20 @@ const statusLabels = {
 };
 
 export function AgentStatus() {
+  const queryClient = useQueryClient();
   const { data: status, isLoading } = useQuery<AgentStatusType>({
     queryKey: ['agent-status'],
     queryFn: agentApi.getStatus,
+  });
+  const triggerMutation = useMutation({
+    mutationFn: agentApi.triggerAnalysis,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-status'] });
+      queryClient.invalidateQueries({ queryKey: ['risks'] });
+      queryClient.invalidateQueries({ queryKey: ['opportunities'] });
+      queryClient.invalidateQueries({ queryKey: ['mitigation-plans'] });
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+    },
   });
 
   if (isLoading) {
@@ -43,11 +54,21 @@ export function AgentStatus() {
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Agent Status</h2>
-        <div className="flex items-center gap-2">
-          <div className={`w-3 h-3 rounded-full ${statusColors[status.status]}`}></div>
-          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-            {statusLabels[status.status]}
-          </span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => triggerMutation.mutate()}
+            disabled={triggerMutation.isPending}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors text-sm"
+          >
+            {triggerMutation.isPending ? 'Triggering...' : 'Trigger Analysis'}
+          </button>
+          <div className="flex items-center gap-2">
+            <div className={`w-3 h-3 rounded-full ${statusColors[status.status]}`}></div>
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {statusLabels[status.status]}
+            </span>
+          </div>
         </div>
       </div>
 

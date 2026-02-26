@@ -1,0 +1,78 @@
+from uuid import UUID
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.api.deps import get_current_oem
+from app.models.oem import Oem
+from app.services.suppliers import get_all, get_one, upload_csv, get_risks_by_supplier
+
+router = APIRouter(prefix="/suppliers", tags=["suppliers"])
+
+
+@router.post("/upload")
+def upload(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    oem: Oem = Depends(get_current_oem),
+):
+    if not file.file:
+        raise HTTPException(status_code=400, detail='No file uploaded. Use form field name "file".')
+    content = file.file.read()
+    return upload_csv(db, oem.id, content, file.filename or "upload.csv")
+
+
+@router.get("")
+def list_suppliers(
+    db: Session = Depends(get_db),
+    oem: Oem = Depends(get_current_oem),
+):
+    suppliers = get_all(db, oem.id)
+    risk_map = get_risks_by_supplier(db)
+    return [
+        {
+            **{
+                "id": str(s.id),
+                "oemId": str(s.oemId) if s.oemId else None,
+                "name": s.name,
+                "location": s.location,
+                "city": s.city,
+                "country": s.country,
+                "region": s.region,
+                "commodities": s.commodities,
+                "metadata": s.metadata_,
+                "createdAt": s.createdAt.isoformat() if s.createdAt else None,
+                "updatedAt": s.updatedAt.isoformat() if s.updatedAt else None,
+            },
+            "riskSummary": risk_map.get(s.name, {"count": 0, "bySeverity": {}, "latest": None}),
+        }
+        for s in suppliers
+    ]
+
+
+@router.get("/{id}")
+def get_supplier_by_id(
+    id: UUID,
+    db: Session = Depends(get_db),
+    oem: Oem = Depends(get_current_oem),
+):
+    supplier = get_one(db, id, oem.id)
+    if not supplier:
+        return None
+    risk_map = get_risks_by_supplier(db)
+    return {
+        **{
+            "id": str(supplier.id),
+            "oemId": str(supplier.oemId) if supplier.oemId else None,
+            "name": supplier.name,
+            "location": supplier.location,
+            "city": supplier.city,
+            "country": supplier.country,
+            "region": supplier.region,
+            "commodities": supplier.commodities,
+            "metadata": supplier.metadata_,
+            "createdAt": supplier.createdAt.isoformat() if supplier.createdAt else None,
+            "updatedAt": supplier.updatedAt.isoformat() if supplier.updatedAt else None,
+        },
+        "riskSummary": risk_map.get(supplier.name, {"count": 0, "bySeverity": {}, "latest": None}),
+    }

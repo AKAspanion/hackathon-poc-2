@@ -3,13 +3,13 @@ import logging
 from datetime import datetime
 from typing import TypedDict, Any
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 
 from app.config import settings
 from app.services.agent_orchestrator import _extract_json
 from app.services.agent_types import OemScope
+from app.services.langchain_llm import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -106,27 +106,20 @@ def _build_shipment_metadata_node(state: ShipmentAgentState) -> ShipmentAgentSta
     return {"shipment_metadata": metadata_list}
 
 
-_llm: ChatAnthropic | None = None
 _prompt: ChatPromptTemplate | None = None
 
 
 def _get_langchain_chain() -> Any | None:
     """
-    Build a LangChain ChatAnthropic chain for shipment risk extraction.
-    Returns None when Anthropic is not configured so callers can fall back
-    to heuristic logic.
+    Build a LangChain chain for shipment risk extraction.
+    Uses Anthropic or Ollama per settings.llm_provider (see langchain_llm.get_chat_model).
+    Returns None when no LLM is configured so callers fall back to heuristic logic.
     """
-    global _llm, _prompt
+    global _prompt
 
-    if not settings.anthropic_api_key:
+    llm = get_chat_model()
+    if llm is None:
         return None
-
-    if _llm is None:
-        _llm = ChatAnthropic(
-            model=settings.anthropic_model or "claude-3-5-sonnet-20241022",
-            api_key=settings.anthropic_api_key,
-            max_tokens=1024,
-        )
 
     if _prompt is None:
         _prompt = ChatPromptTemplate.from_messages(
@@ -149,9 +142,9 @@ def _get_langchain_chain() -> Any | None:
                         "Analyze the following shipment metadata for risks.\n\n"
                         "Metadata JSON:\n{shipment_metadata_json}\n\n"
                         "Return JSON of shape:\n"
-                        "{\n"
+                        "{{\n"
                         '  \"risks\": [\n'
-                        "    {\n"
+                        "    {{\n"
                         '      \"title\": str,\n'
                         '      \"description\": str,\n'
                         '      \"severity\": '
@@ -161,22 +154,22 @@ def _get_langchain_chain() -> Any | None:
                         '      \"estimatedImpact\": str | null,\n'
                         '      \"estimatedCost\": number | null,\n'
                         '      \"route\": str,\n'
-                        '      \"delay_risk\": { \"score\": number, '
-                        '\"label\": \"low|medium|high|critical\" },\n'
-                        '      \"stagnation_risk\": { \"score\": number, '
-                        '\"label\": \"low|medium|high|critical\" },\n'
-                        '      \"velocity_risk\": { \"score\": number, '
-                        '\"label\": \"low|medium|high|critical\" }\n'
-                        "    }\n"
+                        '      \"delay_risk\": {{ \"score\": number, '
+                        '\"label\": \"low|medium|high|critical\" }},\n'
+                        '      \"stagnation_risk\": {{ \"score\": number, '
+                        '\"label\": \"low|medium|high|critical\" }},\n'
+                        '      \"velocity_risk\": {{ \"score\": number, '
+                        '\"label\": \"low|medium|high|critical\" }}\n'
+                        "    }}\n"
                         "  ]\n"
-                        "}\n"
-                        "If no risks, return {\"risks\": []}."
+                        "}}\n"
+                        "If no risks, return {{\"risks\": []}}."
                     ),
                 ),
             ]
         )
 
-    return _prompt | _llm
+    return _prompt | llm
 
 
 def _band(score: int) -> str:

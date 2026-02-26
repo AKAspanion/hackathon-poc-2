@@ -2,11 +2,11 @@ import json
 import logging
 from typing import TypedDict, Any
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 
 from app.config import settings
+from app.services.langchain_llm import get_chat_model
 from app.services.agent_orchestrator import _extract_json
 from app.services.agent_types import OemScope
 
@@ -60,25 +60,19 @@ def _build_weather_items_node(state: WeatherAgentState) -> WeatherAgentState:
     return {"weather_items": normalized}
 
 
-_llm: ChatAnthropic | None = None
 _prompt: ChatPromptTemplate | None = None
 
 
 def _get_langchain_chain() -> Any | None:
     """
-    Build a LangChain ChatAnthropic chain for weather exposure analysis.
+    Build a LangChain chain for weather exposure analysis.
+    Uses Anthropic or Ollama per settings.llm_provider (see langchain_llm.get_chat_model).
     """
-    global _llm, _prompt
+    global _prompt
 
-    if not settings.anthropic_api_key:
+    llm = get_chat_model()
+    if llm is None:
         return None
-
-    if _llm is None:
-        _llm = ChatAnthropic(
-            model=settings.anthropic_model or "claude-3-5-sonnet-20241022",
-            api_key=settings.anthropic_api_key,
-            max_tokens=1024,
-        )
 
     if _prompt is None:
         _prompt = ChatPromptTemplate.from_messages(
@@ -104,9 +98,9 @@ def _get_langchain_chain() -> Any | None:
                         "supply chain weather risks and opportunities.\n\n"
                         "Weather JSON:\n{weather_items_json}\n\n"
                         "Return JSON of shape:\n"
-                        "{\n"
+                        "{{\n"
                         '  \"risks\": [\n'
-                        "    {\n"
+                        "    {{\n"
                         '      \"title\": str,\n'
                         '      \"description\": str,\n'
                         '      \"severity\": \"low\" | \"medium\" | \"high\" '
@@ -118,10 +112,10 @@ def _get_langchain_chain() -> Any | None:
                         '      \"weather_exposure_score\": number | null,\n'
                         '      \"storm_risk\": number | null,\n'
                         '      \"temperature_extreme_days\": number | null\n'
-                        "    }\n"
+                        "    }}\n"
                         "  ],\n"
                         '  \"opportunities\": [\n'
-                        "    {\n"
+                        "    {{\n"
                         '      \"title\": str,\n'
                         '      \"description\": str,\n'
                         '      \"type\": \"cost_saving\" | \"time_saving\" '
@@ -130,16 +124,16 @@ def _get_langchain_chain() -> Any | None:
                         '      \"affectedRegion\": str | null,\n'
                         '      \"potentialBenefit\": str | null,\n'
                         '      \"estimatedValue\": number | null\n'
-                        "    }\n"
+                        "    }}\n"
                         "  ]\n"
-                        "}\n"
+                        "}}\n"
                         "If none, use empty arrays."
                     ),
                 ),
             ]
         )
 
-    return _prompt | _llm
+    return _prompt | llm
 
 
 def _heuristic_weather_from_items(

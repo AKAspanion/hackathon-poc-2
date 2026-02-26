@@ -738,14 +738,21 @@ async def _run_analysis_for_oem(
             "affectedRegion": risk.affectedRegion,
             "affectedSupplier": aff_label,
         })
-        create_plan_from_dict(
-            db,
-            plan_data,
-            risk_id=risk.id,
-            opportunity_id=None,
-            agent_status_id=agent_status_id,
-        )
-        per_risk_plans_created += 1
+        if plan_data and plan_data.get("title"):
+            create_plan_from_dict(
+                db,
+                plan_data,
+                risk_id=risk.id,
+                opportunity_id=None,
+                agent_status_id=agent_status_id,
+            )
+            per_risk_plans_created += 1
+        elif not plan_data:
+            logger.warning(
+                "Skipping mitigation plan for risk %s: LLM returned empty plan "
+                "(e.g. invalid API key or parse error)",
+                risk.id,
+            )
     logger.info(
         "_run_analysis_for_oem: per-risk mitigation plans created=%d "
         "for OEM %s",
@@ -778,14 +785,15 @@ async def _run_analysis_for_oem(
             "type": getattr(opp.type, "value", opp.type),
             "potentialBenefit": opp.potentialBenefit,
         })
-        create_plan_from_dict(
-            db,
-            plan_data,
-            risk_id=None,
-            opportunity_id=opp.id,
-            agent_status_id=agent_status_id,
-        )
-        opp_plans_created += 1
+        if plan_data and plan_data.get("title"):
+            create_plan_from_dict(
+                db,
+                plan_data,
+                risk_id=None,
+                opportunity_id=opp.id,
+                agent_status_id=agent_status_id,
+            )
+            opp_plans_created += 1
     logger.info(
         "_run_analysis_for_oem: opportunity plans created=%d for OEM %s",
         opp_plans_created,

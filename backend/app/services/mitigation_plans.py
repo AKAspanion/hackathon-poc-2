@@ -96,8 +96,8 @@ def create_plan_from_dict(
     raw_actions = plan_data.get("actions") or []
     actions = _normalize_actions(raw_actions)
     plan = MitigationPlan(
-        title=plan_data["title"],
-        description=plan_data["description"],
+        title=plan_data.get("title") or "Untitled plan",
+        description=plan_data.get("description") or "",
         actions=actions,
         status=PlanStatus.DRAFT,
         riskId=risk_id,

@@ -2,12 +2,11 @@ import json
 import logging
 from typing import TypedDict, Literal
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 
-from app.config import settings
 from app.services.agent_orchestrator import _extract_json
+from app.services.langchain_llm import get_chat_model
 from app.services.agent_types import OemScope
 
 logger = logging.getLogger(__name__)
@@ -58,22 +57,13 @@ def _build_news_items_node(state: NewsAgentState) -> NewsAgentState:
     return {"news_items": normalized}
 
 
-_llm: ChatAnthropic | None = None
 _prompt_supplier: ChatPromptTemplate | None = None
 _prompt_global: ChatPromptTemplate | None = None
 
 
-def _get_llm() -> ChatAnthropic | None:
-    global _llm
-    if not settings.anthropic_api_key:
-        return None
-    if _llm is None:
-        _llm = ChatAnthropic(
-            model=settings.anthropic_model or "claude-3-5-sonnet-20241022",
-            api_key=settings.anthropic_api_key,
-            max_tokens=1024,
-        )
-    return _llm
+def _get_llm():
+    """Return LangChain chat model (Anthropic or Ollama per settings)."""
+    return get_chat_model()
 
 
 def _get_prompt(context: Literal["supplier", "global"]) -> ChatPromptTemplate:
@@ -106,9 +96,9 @@ def _get_prompt(context: Literal["supplier", "global"]) -> ChatPromptTemplate:
                             "of the OEM and suppliers.\n\n"
                             "News JSON:\n{news_items_json}\n\n"
                             "Return JSON of shape:\n"
-                            "{\n"
+                            "{{\n"
                             '  \"risks\": [\n'
-                            "    {\n"
+                            "    {{\n"
                             '      \"title\": str,\n'
                             '      \"description\": str,\n'
                             '      \"severity\": \"low\" | \"medium\" | '
@@ -119,10 +109,10 @@ def _get_prompt(context: Literal["supplier", "global"]) -> ChatPromptTemplate:
                             '      \"estimatedCost\": number | null,\n'
                             '      \"risk_type\": str,\n'
                             '      \"source\": str | null\n'
-                            "    }\n"
+                            "    }}\n"
                             "  ],\n"
                             '  \"opportunities\": [\n'
-                            "    {\n"
+                            "    {{\n"
                             '      \"title\": str,\n'
                             '      \"description\": str,\n'
                             '      \"type\": \"cost_saving\" | '
@@ -132,9 +122,9 @@ def _get_prompt(context: Literal["supplier", "global"]) -> ChatPromptTemplate:
                             '      \"affectedRegion\": str | null,\n'
                             '      \"potentialBenefit\": str | null,\n'
                             '      \"estimatedValue\": number | null\n'
-                            "    }\n"
+                            "    }}\n"
                             "  ]\n"
-                            "}\n"
+                            "}}\n"
                             "If none, use empty arrays."
                         ),
                     ),
@@ -161,9 +151,9 @@ def _get_prompt(context: Literal["supplier", "global"]) -> ChatPromptTemplate:
                         "chain risk (not just a single OEM).\n\n"
                         "News JSON:\n{news_items_json}\n\n"
                         "Return JSON of shape:\n"
-                        "{\n"
+                        "{{\n"
                         '  \"risks\": [\n'
-                        "    {\n"
+                        "    {{\n"
                         '      \"title\": str,\n'
                         '      \"description\": str,\n'
                         '      \"severity\": \"low\" | \"medium\" | '
@@ -174,12 +164,12 @@ def _get_prompt(context: Literal["supplier", "global"]) -> ChatPromptTemplate:
                         '      \"estimatedCost\": number | null,\n'
                         '      \"risk_type\": str,\n'
                         '      \"source\": str | null\n'
-                        "    }\n"
+                        "    }}\n"
                         "  ],\n"
                         '  \"opportunities\": []\n'
-                        "}\n"
+                        "}}\n"
                         "If no material global risks, return "
-                        "{\"risks\": [], \"opportunities\": []}."
+                        "{{\"risks\": [], \"opportunities\": []}}."
                     ),
                 ),
             ]

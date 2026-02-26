@@ -142,6 +142,12 @@ def get_oem_scope(db: Session, oem_id: UUID) -> OemScope | None:
     if not oem:
         return None
     suppliers = get_suppliers(db, oem_id)
+    if not suppliers:
+        logger.warning(
+            "get_oem_scope: OEM %s has no suppliers; skipping workflow scope",
+            oem_id,
+        )
+        return None
     supplier_names: list[str] = []
     locations: list[str] = []
     cities: list[str] = []

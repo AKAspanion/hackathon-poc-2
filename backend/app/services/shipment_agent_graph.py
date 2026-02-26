@@ -134,9 +134,9 @@ def _get_langchain_chain() -> Any | None:
                 (
                     "system",
                     (
-                        "You are a Shipment Agent for a manufacturing supply chain. "
-                        "You receive normalized shipment timelines and metrics and must "
-                        "produce structured shipment risk pointers, focused on:\n"
+                "You are a Shipment Agent for a manufacturing supply chain. "
+                "You receive normalized shipment timelines and metrics and "
+                "must produce structured shipment risk pointers, focused on:\n"
                         "- delay_risk (milestone vs actual delays)\n"
                         "- stagnation_risk (no movement for X days)\n"
                         "- velocity_risk (too slow/fast vs expected transit days)\n\n"
@@ -154,15 +154,19 @@ def _get_langchain_chain() -> Any | None:
                         "    {\n"
                         '      \"title\": str,\n'
                         '      \"description\": str,\n'
-                        '      \"severity\": \"low\" | \"medium\" | \"high\" | \"critical\",\n'
+                        '      \"severity\": '
+                        '\"low\" | \"medium\" | \"high\" | \"critical\",\n'
                         '      \"affectedRegion\": str | null,\n'
                         '      \"affectedSupplier\": str | null,\n'
                         '      \"estimatedImpact\": str | null,\n'
                         '      \"estimatedCost\": number | null,\n'
                         '      \"route\": str,\n'
-                        '      \"delay_risk\": { \"score\": number, \"label\": \"low|medium|high|critical\" },\n'
-                        '      \"stagnation_risk\": { \"score\": number, \"label\": \"low|medium|high|critical\" },\n'
-                        '      \"velocity_risk\": { \"score\": number, \"label\": \"low|medium|high|critical\" }\n'
+                        '      \"delay_risk\": { \"score\": number, '
+                        '\"label\": \"low|medium|high|critical\" },\n'
+                        '      \"stagnation_risk\": { \"score\": number, '
+                        '\"label\": \"low|medium|high|critical\" },\n'
+                        '      \"velocity_risk\": { \"score\": number, '
+                        '\"label\": \"low|medium|high|critical\" }\n'
                         "    }\n"
                         "  ]\n"
                         "}\n"
@@ -243,6 +247,80 @@ def _heuristic_shipping_risks_from_metadata(
         )
 
     return risks
+
+
+def _normalize_supplier_labels(raw: Any) -> list[str]:
+    """
+    Normalize supplier labels coming from LLM or upstream data into a
+    deduplicated list of non-empty strings.
+    """
+    names: list[str] = []
+    if isinstance(raw, (list, tuple)):
+        candidates = raw
+    elif raw:
+        candidates = [raw]
+    else:
+        candidates = []
+
+    for value in candidates:
+        label = str(value).strip()
+        if not label:
+            continue
+        names.append(label)
+
+    unique: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(name)
+    return unique
+
+
+def _infer_suppliers_for_route(
+    scope: OemScope, meta: ShipmentMetadata | None
+) -> list[str]:
+    """
+    Best-effort inference of affected suppliers for a shipment route based on
+    the OEM scope. We match known supplier names against the route, origin, and
+    destination fields.
+    """
+    if not meta:
+        return []
+
+    supplier_names = scope.get("supplierNames") or []
+    if not supplier_names:
+        return []
+
+    origin = str(meta.get("origin") or "").lower()
+    destination = str(meta.get("destination") or "").lower()
+    route = str(meta.get("route") or "").lower()
+
+    inferred: list[str] = []
+    seen: set[str] = set()
+
+    for raw_name in supplier_names:
+        name = str(raw_name or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        # Match by equality, prefix, or substring against origin/destination/route.
+        if not (
+            origin == key
+            or destination == key
+            or origin.startswith(key)
+            or destination.startswith(key)
+            or (key and key in route)
+        ):
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        inferred.append(name)
+
+    return inferred
 
 
 async def _shipment_risk_llm_node(state: ShipmentAgentState) -> ShipmentAgentState:
@@ -352,12 +430,32 @@ async def run_shipment_agent_graph(
             },
         }
 
+        # Ensure shipping risks are associated with concrete suppliers by
+        # inferring affected suppliers from the route/metadata and OEM scope,
+        # and merging with any supplier labels that may already be present.
+        existing_suppliers = _normalize_supplier_labels(
+            risk.get("affectedSupplier")
+        )
+        inferred_suppliers = _infer_suppliers_for_route(scope, meta)
+
+        all_suppliers: list[str] = []
+        seen_labels: set[str] = set()
+        for name in existing_suppliers + inferred_suppliers:
+            label = name.strip()
+            if not label:
+                continue
+            key = label.lower()
+            if key in seen_labels:
+                continue
+            seen_labels.add(key)
+            all_suppliers.append(label)
+
         db_risk = {
             "title": risk["title"],
             "description": risk["description"],
             "severity": risk.get("severity", "medium"),
             "affectedRegion": risk.get("affectedRegion"),
-            "affectedSupplier": risk.get("affectedSupplier"),
+            "affectedSupplier": all_suppliers or None,
             "estimatedImpact": risk.get("estimatedImpact"),
             "estimatedCost": risk.get("estimatedCost"),
             "sourceType": "shipping",

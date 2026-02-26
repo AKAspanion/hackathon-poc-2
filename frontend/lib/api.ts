@@ -1,4 +1,5 @@
 import axios from "axios";
+import type { WeatherRiskResponse, ShipmentInput, ShipmentWeatherExposureResponse } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -215,6 +216,34 @@ export const oemsApi = {
       .post<{ oem: Oem; token: string }>("/oems/login", { email })
       .then((res) => res.data),
 };
+
+// Weather agent API (from POC: city risk + shipment weather exposure)
+export async function fetchWeatherRisk(city: string): Promise<WeatherRiskResponse> {
+  const url = `${API_BASE_URL}/api/v1/weather/risk?city=${encodeURIComponent(city.trim())}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const message = body?.detail ?? `Request failed with ${res.status}`;
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+export async function fetchShipmentWeatherExposure(
+  input: ShipmentInput
+): Promise<ShipmentWeatherExposureResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/shipment/weather-exposure`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const message = body?.detail ?? `Request failed with ${res.status}`;
+    throw new Error(message);
+  }
+  return res.json();
+}
 
 export const suppliersApi = {
   uploadCsv: (file: File) => {

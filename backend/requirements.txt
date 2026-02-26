@@ -13,3 +13,4 @@ apscheduler==3.10.4
 langgraph
 langchain-core
 langchain-anthropic
+langchain-ollama>=0.2.0

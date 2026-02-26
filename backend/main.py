@@ -10,15 +10,23 @@ from app.database import Base, engine
 # Import all models so they are registered with Base.metadata before create_all
 import app.models  # noqa: F401
 
-from app.api.routes import app_routes, oems, risks, opportunities, mitigation_plans, suppliers, agent, ws
+from app.api.routes import app_routes, oems, risks, opportunities, mitigation_plans, suppliers, agent, ws, weather_agent
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 # Suppress SQL echo/logging (engine already has echo=False)
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
-# Ensure DB tables exist for SQLAlchemy models
-Base.metadata.create_all(bind=engine)
+# Ensure DB tables exist for SQLAlchemy models (non-blocking: app can run without DB for weather-agent etc.)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    logger.warning(
+        "Database not available (tables not created): %s. "
+        "Set DATABASE_URL or db_* env vars and ensure PostgreSQL is running. "
+        "Weather-agent and other stateless routes will still work.",
+        e,
+    )
 
 
 @asynccontextmanager
@@ -48,6 +56,7 @@ app.include_router(opportunities.router)
 app.include_router(mitigation_plans.router)
 app.include_router(suppliers.router)
 app.include_router(agent.router)
+app.include_router(weather_agent.router)
 app.include_router(ws.router)
 
 

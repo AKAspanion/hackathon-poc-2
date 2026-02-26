@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3"
 
     weather_api_key: str | None = None
+    weather_days_forecast: int = 3
     news_api_key: str | None = None
 
     jwt_secret: str = "dev-secret-change-in-production"

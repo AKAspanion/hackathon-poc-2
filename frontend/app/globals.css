@@ -3,11 +3,28 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Weather / supply chain risk UI (from POC) */
+  --primary-dark: #003d7a;
+  --primary-light: #4a90e2;
+  --cyan-blue: #00bcd4;
+  --sky-blue: #c1d6ea;
+  --dark-gray: #1f2937;
+  --medium-gray: #6b7280;
+  --light-gray: #d1d5db;
+  --off-white: #f9fafb;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary-dark: #003d7a;
+  --color-primary-light: #4a90e2;
+  --color-cyan-blue: #00bcd4;
+  --color-sky-blue: #c1d6ea;
+  --color-dark-gray: #1f2937;
+  --color-medium-gray: #6b7280;
+  --color-light-gray: #d1d5db;
+  --color-off-white: #f9fafb;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

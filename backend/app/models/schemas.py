@@ -17,6 +17,13 @@ class LocationQuery(BaseModel):
     city: str = Field(..., min_length=1, max_length=100)
 
 
+class ShipmentInput(BaseModel):
+    supplier_city: str = Field(..., min_length=1, max_length=100, description="Origin city (Supplier)")
+    oem_city: str = Field(..., min_length=1, max_length=100, description="Destination city (OEM)")
+    shipment_start_date: str = Field(..., description="Shipment start date in YYYY-MM-DD format")
+    transit_days: int = Field(..., ge=1, le=30, description="Estimated transit duration in days")
+
+
 class RiskFactor(BaseModel):
     factor: str
     level: RiskLevel
@@ -72,3 +79,40 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     service: str = "weather-agent"
     weather_api_configured: bool = False
+
+
+class DayWeatherSnapshot(BaseModel):
+    date: str
+    day_number: int
+    location_name: str
+    estimated_location: str  # city name used for weather lookup
+    condition: str
+    temp_c: float
+    min_temp_c: float | None = None
+    max_temp_c: float | None = None
+    wind_kph: float
+    precip_mm: float
+    vis_km: float
+    humidity: int
+    is_historical: bool  # True if past data, False if forecast
+
+
+class DayRiskSnapshot(BaseModel):
+    date: str
+    day_number: int
+    location_name: str
+    weather: DayWeatherSnapshot
+    risk: RiskSummary
+    risk_summary_text: str
+
+
+class ShipmentWeatherExposureResponse(BaseModel):
+    supplier_city: str
+    oem_city: str
+    shipment_start_date: str
+    transit_days: int
+    days: list[DayRiskSnapshot]
+    overall_exposure_level: RiskLevel
+    overall_exposure_score: float
+    risk_analysis_payload: dict[str, Any]  # structured payload for Risk Analysis Agent
+    agent_summary: str | None = None

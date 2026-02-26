@@ -3,11 +3,14 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from app.agent.graph import run_weather_risk_agent
+from app.agent.shipment_agent import run_shipment_weather_agent
 from app.config import settings
 from app.models.schemas import (
     HealthResponse,
     LocationInfo,
     RiskSummary,
+    ShipmentInput,
+    ShipmentWeatherExposureResponse,
     WeatherCondition,
     WeatherRiskResponse,
 )
@@ -81,3 +84,23 @@ async def get_weather_risk(city: str):
         agent_summary=agent_summary,
         raw_weather=data.get("current") if data else None,
     )
+
+
+@router.post("/shipment/weather-exposure", response_model=ShipmentWeatherExposureResponse)
+async def get_shipment_weather_exposure(body: ShipmentInput):
+    """
+    Analyse weather exposure for a shipment from Supplier to OEM.
+    Returns a day-by-day risk timeline and a structured payload for the Risk Analysis Agent.
+    """
+    try:
+        result = await run_shipment_weather_agent(
+            supplier_city=body.supplier_city.strip(),
+            oem_city=body.oem_city.strip(),
+            shipment_start_date=body.shipment_start_date.strip(),
+            transit_days=body.transit_days,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Shipment weather agent failed: {e}")

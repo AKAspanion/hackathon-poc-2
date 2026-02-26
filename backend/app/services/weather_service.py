@@ -71,6 +71,29 @@ async def _resolve_location(client: httpx.AsyncClient, q: str) -> str | None:
         return None
 
 
+async def get_historical_weather(city: str, date: str) -> dict[str, Any] | None:
+    """Fetch historical weather for a city on a specific date (YYYY-MM-DD)."""
+    if not settings.weather_api_key:
+        return None
+    q = _location_query(city)
+    if not q:
+        return None
+    params: dict[str, str | int] = {
+        "key": settings.weather_api_key,
+        "q": q,
+        "dt": date,
+    }
+    url = f"{BASE_URL}/history.json"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            r = await client.get(url, params=params)
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            logger.exception("History API failed for %s on %s: %s", city, date, e)
+            return None
+
+
 async def get_forecast(city: str, days: int | None = None) -> dict[str, Any] | None:
     if not settings.weather_api_key:
         return None

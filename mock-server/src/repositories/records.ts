@@ -1,22 +1,73 @@
 import type { PrismaClient, Record as RecordModel } from "@prisma/client";
 import type { ListOptions } from "../types";
 
+const PATH_SEGMENT_REGEX = /^[a-zA-Z0-9_]+$/;
+
+/**
+ * Builds a safe SQL expression for JSON path comparison, e.g. data->'name'->>'city'.
+ * Path uses object path notation (e.g. "name" or "name.city").
+ */
+function buildDataPathSql(path: string): string {
+  const segments = path.split(".").filter(Boolean);
+  if (segments.length === 0) throw new Error("Query path cannot be empty");
+  for (const seg of segments) {
+    if (!PATH_SEGMENT_REGEX.test(seg)) {
+      throw new Error(`Invalid query path segment: ${seg}`);
+    }
+  }
+  const escaped = segments.map((s) => `'${s.replace(/'/g, "''")}'`);
+  const pathSql =
+    escaped.length === 1
+      ? `data->>${escaped[0]}`
+      : `data->${escaped.slice(0, -1).join("->")}->>${escaped[escaped.length - 1]}`;
+  return pathSql;
+}
+
 export async function listRecords(
   prisma: PrismaClient,
   collectionId: string,
   options: ListOptions
 ): Promise<{ rows: RecordModel[]; total: number }> {
-  const [total, rows] = await Promise.all([
-    prisma.record.count({ where: { collectionId } }),
-    prisma.record.findMany({
-      where: { collectionId },
-      orderBy: { createdAt: "desc" },
-      take: options.limit,
-      skip: options.offset,
-    }),
-  ]);
+  const query = options.query;
+  if (!query?.path || query.value === undefined) {
+    const [total, rows] = await Promise.all([
+      prisma.record.count({ where: { collectionId } }),
+      prisma.record.findMany({
+        where: { collectionId },
+        orderBy: { createdAt: "desc" },
+        take: options.limit,
+        skip: options.offset,
+      }),
+    ]);
+    return { rows, total };
+  }
 
-  return { rows, total };
+  const pathSql = buildDataPathSql(query.path);
+  const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
+    `SELECT COUNT(*)::bigint as count FROM "Record" WHERE "collectionId" = $1 AND ${pathSql} = $2`,
+    collectionId,
+    query.value
+  );
+  const total = Number(countResult[0]?.count ?? 0);
+  const rows = await prisma.$queryRawUnsafe<
+    Array<{
+      id: string;
+      collectionId: string;
+      data: unknown;
+      createdAt: Date;
+      updatedAt: Date;
+    }>
+  >(
+    `SELECT * FROM "Record" WHERE "collectionId" = $1 AND ${pathSql} = $2 ORDER BY "createdAt" DESC LIMIT $3 OFFSET $4`,
+    collectionId,
+    query.value,
+    options.limit,
+    options.offset
+  );
+  return {
+    rows: rows as RecordModel[],
+    total,
+  };
 }
 
 export async function createRecord(

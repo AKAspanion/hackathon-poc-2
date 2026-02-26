@@ -65,6 +65,20 @@ function getLimitOffset(
   return { limit, offset };
 }
 
+/**
+ * Parse query param q in format "path:value" (object path notation, e.g. name:detroit or name.city:detroit).
+ * First colon separates path from value; value may contain colons.
+ */
+function parseKeyValueQuery(q: unknown): { path: string; value: string } | null {
+  if (typeof q !== "string" || !q.trim()) return null;
+  const firstColon = q.indexOf(":");
+  if (firstColon <= 0) return null;
+  const path = q.slice(0, firstColon).trim();
+  const value = q.slice(firstColon + 1).trim();
+  if (!path) return null;
+  return { path, value };
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -75,8 +89,13 @@ router.get("/:collectionSlug", async (req: Request, res: Response, next: NextFun
   try {
     const collection = req.collection!;
     const { limit, offset } = getLimitOffset(req.query, collection.config);
+    const query = parseKeyValueQuery(req.query.q);
     const prisma = getPrisma(req);
-    const result = await recordsRepo.listRecords(prisma, collection.id, { limit, offset });
+    const result = await recordsRepo.listRecords(prisma, collection.id, {
+      limit,
+      offset,
+      ...(query && { query }),
+    });
 
     const delayConfig =
       collection.config && typeof collection.config === "object"

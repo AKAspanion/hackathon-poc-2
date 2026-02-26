@@ -99,6 +99,7 @@ def create_opportunity_from_dict(
         estimatedValue=_sanitize_numeric(data.get("estimatedValue")),
         oemId=data.get("oemId"),
         workflowRunId=workflow_run_id,
+        supplierId=data.get("supplierId"),
         agentStatusId=agent_status_id,
         metadata_=data.get("metadata"),
     )

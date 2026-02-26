@@ -34,6 +34,11 @@ class Opportunity(Base):
         ForeignKey("workflow_runs.id", ondelete="SET NULL"),
         nullable=True,
     )
+    supplierId = Column(
+        UUID(as_uuid=True),
+        ForeignKey("suppliers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     title = Column(String, nullable=False)
     description = Column(Text, nullable=False)

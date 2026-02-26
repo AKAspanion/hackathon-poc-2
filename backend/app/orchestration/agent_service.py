@@ -106,11 +106,12 @@ def _get_running_status(db: Session) -> AgentStatusEntity | None:
     )
 
 
-def _create_agent_run(
+def _create_agent_run_in_db(
     db: Session,
     oem_id: UUID | None,
     workflow_run_id: UUID | None,
     initial_task: str | None,
+    supplier_id: UUID | None = None,
 ) -> AgentStatusEntity:
     """
     Create a new agent_status row representing a single workflow trigger.
@@ -118,6 +119,7 @@ def _create_agent_run(
     ent = AgentStatusEntity(
         oemId=oem_id,
         workflowRunId=workflow_run_id,
+        supplierId=supplier_id,
         status=AgentStatus.MONITORING.value,
         currentTask=initial_task,
         risksDetected=0,
@@ -202,6 +204,82 @@ def get_oem_scope(db: Session, oem_id: UUID) -> OemScope | None:
         regions=list(dict.fromkeys(regions)),
         commodities=list(commodities),
     )
+
+
+def get_oem_supplier_scope(db: Session, oem_id: UUID, supplier) -> OemScope:
+    """
+    Build a scope for a single OEM-supplier pair (one supplier only).
+    Used when the workflow runs per supplier so each run has oem_id + supplier_id.
+    """
+    oem = get_oem_by_id(db, oem_id)
+    if not oem:
+        raise ValueError(f"OEM {oem_id} not found")
+    locations: list[str] = []
+    cities: list[str] = []
+    countries: list[str] = []
+    regions: list[str] = []
+    commodities = set()
+    if getattr(oem, "location", None):
+        locations.append(oem.location)  # type: ignore[arg-type]
+    if getattr(oem, "city", None):
+        cities.append(oem.city)  # type: ignore[arg-type]
+    country_code = getattr(oem, "countryCode", None)
+    if country_code:
+        countries.append(country_code)  # type: ignore[arg-type]
+    elif getattr(oem, "country", None):
+        countries.append(oem.country)  # type: ignore[arg-type]
+    if getattr(oem, "region", None):
+        regions.append(oem.region)  # type: ignore[arg-type]
+    if getattr(oem, "commodities", None):
+        for c in (oem.commodities or "").replace(";", ",").split(","):
+            c = c.strip()
+            if c:
+                commodities.add(c)
+    if supplier.location:
+        locations.append(supplier.location)
+    if supplier.city:
+        cities.append(supplier.city)
+    if getattr(supplier, "countryCode", None):
+        countries.append(supplier.countryCode)
+    elif supplier.country:
+        countries.append(supplier.country)
+    if supplier.region:
+        regions.append(supplier.region)
+    if supplier.commodities:
+        for c in (supplier.commodities or "").replace(";", ",").split(","):
+            c = c.strip()
+            if c:
+                commodities.add(c)
+    return OemScope(
+        oemId=str(oem_id),
+        oemName=oem.name,
+        supplierNames=[supplier.name] if supplier.name else [],
+        locations=list(dict.fromkeys(locations)),
+        cities=list(dict.fromkeys(cities)),
+        countries=list(dict.fromkeys(countries)),
+        regions=list(dict.fromkeys(regions)),
+        commodities=list(commodities),
+        supplierId=str(supplier.id),
+        supplierName=supplier.name or "",
+    )
+
+
+def get_oem_supplier_scopes(db: Session, oem_id: UUID) -> list[OemScope]:
+    """
+    Return one scope per supplier for the given OEM.
+    Each scope is an OEM-supplier pair so the workflow can run once per supplier.
+    """
+    oem = get_oem_by_id(db, oem_id)
+    if not oem:
+        return []
+    suppliers = get_suppliers(db, oem_id)
+    if not suppliers:
+        logger.warning(
+            "get_oem_supplier_scopes: OEM %s has no suppliers; returning empty list",
+            oem_id,
+        )
+        return []
+    return [get_oem_supplier_scope(db, oem_id, s) for s in suppliers]
 
 
 def _build_data_source_params(scope: OemScope) -> dict:
@@ -499,8 +577,13 @@ async def _run_analysis_for_oem(
         agent_status_id,
     )
     await _broadcast_current_status(db, agent_status_id)
+    supplier_id_from_scope = (
+        UUID(scope["supplierId"]) if scope.get("supplierId") else None
+    )
     for r in combined_risks:
         r["oemId"] = oem_id
+        if supplier_id_from_scope is not None:
+            r["supplierId"] = supplier_id_from_scope
         create_risk_from_dict(
             db,
             r,
@@ -509,6 +592,8 @@ async def _run_analysis_for_oem(
         )
     for o in combined_opps:
         o["oemId"] = oem_id
+        if supplier_id_from_scope is not None:
+            o["supplierId"] = supplier_id_from_scope
         create_opportunity_from_dict(
             db,
             o,
@@ -537,6 +622,8 @@ async def _run_analysis_for_oem(
     )
     for r in global_result["risks"]:
         r["oemId"] = oem_id
+        if supplier_id_from_scope is not None:
+            r["supplierId"] = supplier_id_from_scope
         create_risk_from_dict(
             db,
             r,
@@ -567,6 +654,8 @@ async def _run_analysis_for_oem(
     )
     for r in shipping_result["risks"]:
         r["oemId"] = oem_id
+        if supplier_id_from_scope is not None:
+            r["supplierId"] = supplier_id_from_scope
         create_risk_from_dict(
             db,
             r,
@@ -843,11 +932,10 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
                 "trigger_manual_analysis_sync: starting manual run for OEM %s",
                 oem_id,
             )
-            scope = get_oem_scope(db, oem_id)
-            if not scope:
-                logger.warning("OEM %s not found or no scope", oem_id)
+            scopes = get_oem_supplier_scopes(db, oem_id)
+            if not scopes:
+                logger.warning("OEM %s not found or no supplier scopes", oem_id)
                 return
-            # Create a workflow run for this OEM (daily, with incrementing index).
             today = date.today()
             existing_count = (
                 db.query(WorkflowRun)
@@ -857,91 +945,36 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
                 )
                 .count()
             )
-            workflow_run = WorkflowRun(
-                oemId=oem_id,
-                runDate=today,
-                runIndex=existing_count + 1,
-            )
-            db.add(workflow_run)
-            db.commit()
-            db.refresh(workflow_run)
-
-            run = _create_agent_run(
-                db,
-                oem_id=oem_id,
-                workflow_run_id=workflow_run.id,
-                initial_task=f"Manual run for OEM: {scope['oemName']}",
-            )
-            asyncio.run(_run_analysis_for_oem(db, scope, run.id, workflow_run.id))
-            # Aggregate counts for this workflow run only.
-            run.risksDetected = (
-                db.query(Risk).filter(Risk.agentStatusId == run.id).count()
-            )
-            run.opportunitiesIdentified = (
-                db.query(Opportunity)
-                .filter(Opportunity.agentStatusId == run.id)
-                .count()
-            )
-            run.plansGenerated = (
-                db.query(MitigationPlan)
-                .filter(MitigationPlan.agentStatusId == run.id)
-                .count()
-            )
-            run.lastProcessedData = {
-                "timestamp": datetime.utcnow().isoformat(),
-                "oemsProcessed": [scope["oemName"]],
-                "workflowRunId": str(workflow_run.id),
-            }
-            db.commit()
-            _update_status(
-                db,
-                AgentStatus.COMPLETED.value,
-                "Manual analysis completed",
-                agent_status_id=run.id,
-            )
-        else:
-            logger.info("trigger_manual_analysis_sync: starting run for all OEMs")
-            oems = get_all_oems(db)
-            if not oems:
-                _update_status(
-                    db,
-                    AgentStatus.COMPLETED.value,
-                    "No OEMs to process",
-                )
-                return
-            # Create a separate workflow run + status row for each OEM so that
-            # the DB has one entry per OEM run.
-            processed_oems: list[str] = []
-            for oem in oems:
-                scope = get_oem_scope(db, oem.id)
-                if not scope:
-                    continue
-
-                today = date.today()
-                existing_count = (
-                    db.query(WorkflowRun)
-                    .filter(
-                        WorkflowRun.oemId == oem.id,
-                        WorkflowRun.runDate == today,
-                    )
-                    .count()
+            processed_names: list[str] = []
+            for i, scope in enumerate(scopes):
+                supplier_id_uuid = (
+                    UUID(scope["supplierId"]) if scope.get("supplierId") else None
                 )
                 workflow_run = WorkflowRun(
-                    oemId=oem.id,
+                    oemId=oem_id,
+                    supplierId=supplier_id_uuid,
                     runDate=today,
-                    runIndex=existing_count + 1,
+                    runIndex=existing_count + i + 1,
                 )
                 db.add(workflow_run)
                 db.commit()
                 db.refresh(workflow_run)
 
-                run = _create_agent_run(
-                    db,
-                    oem_id=oem.id,
-                    workflow_run_id=workflow_run.id,
-                    initial_task=f"Monitoring cycle for OEM: {oem.name}",
+                task_label = (
+                    f"Manual run for OEM: {scope['oemName']} / Supplier: {scope.get('supplierName', '')}"
+                    if scope.get("supplierName")
+                    else f"Manual run for OEM: {scope['oemName']}"
                 )
-                asyncio.run(_run_analysis_for_oem(db, scope, run.id, workflow_run.id))
+                run = _create_agent_run_in_db(
+                    db,
+                    oem_id=oem_id,
+                    workflow_run_id=workflow_run.id,
+                    initial_task=task_label,
+                    supplier_id=supplier_id_uuid,
+                )
+                asyncio.run(
+                    _run_analysis_for_oem(db, scope, run.id, workflow_run.id)
+                )
                 run.risksDetected = (
                     db.query(Risk)
                     .filter(
@@ -966,15 +999,112 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
                 run.lastProcessedData = {
                     "timestamp": datetime.utcnow().isoformat(),
                     "oemsProcessed": [scope["oemName"]],
+                    "supplierId": scope.get("supplierId"),
+                    "supplierName": scope.get("supplierName"),
                     "workflowRunId": str(workflow_run.id),
                 }
                 db.commit()
                 _update_status(
                     db,
                     AgentStatus.COMPLETED.value,
-                    "Monitoring cycle completed for OEM",
+                    "Manual analysis completed",
                     agent_status_id=run.id,
                 )
+                if scope.get("supplierName"):
+                    processed_names.append(scope["supplierName"])
+        else:
+            logger.info("trigger_manual_analysis_sync: starting run for all OEMs")
+            oems = get_all_oems(db)
+            if not oems:
+                _update_status(
+                    db,
+                    AgentStatus.COMPLETED.value,
+                    "No OEMs to process",
+                )
+                return
+            # Create a separate workflow run + status row per OEM-supplier pair.
+            processed_oems: list[str] = []
+            for oem in oems:
+                scopes = get_oem_supplier_scopes(db, oem.id)
+                if not scopes:
+                    continue
+                today = date.today()
+                existing_count = (
+                    db.query(WorkflowRun)
+                    .filter(
+                        WorkflowRun.oemId == oem.id,
+                        WorkflowRun.runDate == today,
+                    )
+                    .count()
+                )
+                for i, scope in enumerate(scopes):
+                    supplier_id_uuid = (
+                        UUID(scope["supplierId"])
+                        if scope.get("supplierId")
+                        else None
+                    )
+                    workflow_run = WorkflowRun(
+                        oemId=oem.id,
+                        supplierId=supplier_id_uuid,
+                        runDate=today,
+                        runIndex=existing_count + i + 1,
+                    )
+                    db.add(workflow_run)
+                    db.commit()
+                    db.refresh(workflow_run)
+
+                    task_label = (
+                        f"Monitoring cycle for OEM: {oem.name} / Supplier: {scope.get('supplierName', '')}"
+                        if scope.get("supplierName")
+                        else f"Monitoring cycle for OEM: {oem.name}"
+                    )
+                    run = _create_agent_run_in_db(
+                        db,
+                        oem_id=oem.id,
+                        workflow_run_id=workflow_run.id,
+                        initial_task=task_label,
+                        supplier_id=supplier_id_uuid,
+                    )
+                    asyncio.run(
+                        _run_analysis_for_oem(
+                            db, scope, run.id, workflow_run.id
+                        )
+                    )
+                    run.risksDetected = (
+                        db.query(Risk)
+                        .filter(
+                            Risk.agentStatusId == run.id,
+                            Risk.workflowRunId == workflow_run.id,
+                        )
+                        .count()
+                    )
+                    run.opportunitiesIdentified = (
+                        db.query(Opportunity)
+                        .filter(
+                            Opportunity.agentStatusId == run.id,
+                            Opportunity.workflowRunId == workflow_run.id,
+                        )
+                        .count()
+                    )
+                    run.plansGenerated = (
+                        db.query(MitigationPlan)
+                        .filter(MitigationPlan.agentStatusId == run.id)
+                        .count()
+                    )
+                    run.lastProcessedData = {
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "oemsProcessed": [scope["oemName"]],
+                        "supplierId": scope.get("supplierId"),
+                        "supplierName": scope.get("supplierName"),
+                        "workflowRunId": str(workflow_run.id),
+                    }
+                    db.commit()
+                    _update_status(
+                        db,
+                        AgentStatus.COMPLETED.value,
+                        "Monitoring cycle completed for OEM",
+                        agent_status_id=run.id,
+                    )
                 processed_oems.append(oem.name)
 
     except Exception as e:

@@ -77,12 +77,12 @@ async def lifespan(app: FastAPI):
         logger.info(
             "Trend-insights scheduler started (interval=%d minutes)", interval
         )
-    # Seed shipping data if empty
+    # Seed OEMs, suppliers, and shipping data if empty
     try:
-        from app.seed_shipping import seed_shipping_if_empty
-        seed_shipping_if_empty()
+        from app.seed import seed_all_if_empty
+        seed_all_if_empty()
     except Exception as e:
-        logger.warning("Shipping seed skipped (non-fatal): %s", e)
+        logger.warning("Seed skipped (non-fatal): %s", e)
     yield
     if scheduler:
         scheduler.shutdown()

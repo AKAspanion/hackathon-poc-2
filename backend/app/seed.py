@@ -1,17 +1,154 @@
-"""Seed shipping_suppliers and shipments if empty. Call from startup or manually."""
+"""Seed OEMs, suppliers, and shipping data if empty. Call from startup or manually."""
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.database import Base, SessionLocal, engine
+from app.models.oem import Oem
 from app.models.shipment import Shipment
 from app.models.shipping_supplier import ShippingSupplier
+from app.models.supplier import Supplier
+
+# OEMs to seed (id, name, email, optional location fields)
+SEED_OEMS = [
+    {
+        "id": UUID("1cf64011-88f8-4e71-85dd-e3e9a4c0d3df"),
+        "name": "ankitp",
+        "email": "ankitp@geekyants.com",
+        "location": "Kolkata",
+        "city": None,
+        "country": "India",
+        "countryCode": "IN",
+        "region": "Asia",
+        "commodities": "Semiconductor Chips",
+        "metadata_": {
+            "Tier": "1",
+            "Contact Email": "ankitp@geekyants.com",
+            "Primary Contact": "Ankit Pandit",
+        },
+    },
+    {
+        "id": UUID("9c682575-0285-437f-a1e5-fdba3128fbf5"),
+        "name": "test",
+        "email": "test@test.com",
+        "location": "Kolkata",
+        "city": None,
+        "country": "India",
+        "countryCode": "IN",
+        "region": None,
+        "commodities": "Semiconductor Chips",
+        "metadata_": {
+            "Tier": "1",
+            "Contact Email": "test@test.com",
+            "Primary Contact": "Test User",
+        },
+    },
+]
+
+# Suppliers to seed (all linked to OEM 9c682575-0285-437f-a1e5-fdba3128fbf5)
+SEED_SUPPLIERS = [
+    {
+        "id": UUID("34782817-67fc-4500-995f-33ed83845570"),
+        "oemId": UUID("9c682575-0285-437f-a1e5-fdba3128fbf5"),
+        "name": "Northstar Plastics Inc.",
+        "location": "4500 Industrial Park",
+        "city": "Detroit",
+        "country": "USA",
+        "countryCode": "USA",
+        "region": "North America",
+        "commodities": "Plastic housings; Connectors",
+        "metadata_": {
+            "Tier": "2",
+            "Contact Email": "mark.johnson@northstarplastics.com",
+            "Primary Contact": "Mark Johnson",
+            "Lead Time (days)": "20",
+        },
+        "latestRiskScore": None,
+        "latestRiskLevel": None,
+    },
+    {
+        "id": UUID("5d935889-7558-4e72-ba73-a772dd30f666"),
+        "oemId": UUID("9c682575-0285-437f-a1e5-fdba3128fbf5"),
+        "name": "Zenith Electronics Sdn Bhd",
+        "location": "Lot 22 Tech Park",
+        "city": "Penang",
+        "country": "Malaysia",
+        "countryCode": "Malaysia",
+        "region": "APAC",
+        "commodities": "PCBs; Electronic assemblies",
+        "metadata_": {
+            "Tier": "1",
+            "Contact Email": "ahmad.rahman@zenith-elec.my",
+            "Primary Contact": "Ahmad Rahman",
+            "Lead Time (days)": "28",
+        },
+        "latestRiskScore": None,
+        "latestRiskLevel": None,
+    },
+    {
+        "id": UUID("b6a9a0e5-ff9e-4640-8a5b-37f04405b4b1"),
+        "oemId": UUID("9c682575-0285-437f-a1e5-fdba3128fbf5"),
+        "name": "Pacific Fasteners Co.",
+        "location": "123 Harbor Road",
+        "city": "Shanghai",
+        "country": "China",
+        "countryCode": "China",
+        "region": "APAC",
+        "commodities": "Fasteners; Bolts; Nuts",
+        "metadata_": {
+            "Tier": "1",
+            "Contact Email": "li.wei@pacificfasteners.cn",
+            "Primary Contact": "Li Wei",
+            "Lead Time (days)": "45",
+        },
+        "latestRiskScore": None,
+        "latestRiskLevel": None,
+    },
+    {
+        "id": UUID("e8cbd389-5c6e-41d7-8963-ba5223a98426"),
+        "oemId": UUID("9c682575-0285-437f-a1e5-fdba3128fbf5"),
+        "name": "Alpha Components GmbH",
+        "location": "Industriestrasse 12",
+        "city": "Stuttgart",
+        "country": "Germany",
+        "countryCode": "Germany",
+        "region": "Europe",
+        "commodities": "Aluminum castings; Engine blocks",
+        "metadata_": {
+            "Tier": "1",
+            "Contact Email": "julia.meier@alpha-components.de",
+            "Primary Contact": "Julia Meier",
+            "Lead Time (days)": "30",
+        },
+        "latestRiskScore": None,
+        "latestRiskLevel": None,
+    },
+]
 
 
-def _create_seed_data(db: Session) -> None:
+def _seed_oems(db: Session) -> None:
+    """Insert seed OEMs if they do not already exist (by id)."""
+    for data in SEED_OEMS:
+        if db.query(Oem).filter(Oem.id == data["id"]).first() is not None:
+            continue
+        db.add(Oem(**data))
+    db.commit()
+
+
+def _seed_suppliers(db: Session) -> None:
+    """Insert seed suppliers if they do not already exist (by id)."""
+    for data in SEED_SUPPLIERS:
+        if db.query(Supplier).filter(Supplier.id == data["id"]).first() is not None:
+            continue
+        db.add(Supplier(**data))
+    db.commit()
+
+
+def _create_shipping_seed_data(db: Session) -> None:
     suppliers = [
         ShippingSupplier(
             name="Chennai Chip Supplier",
@@ -176,6 +313,26 @@ def _create_seed_data(db: Session) -> None:
     db.commit()
 
 
+def seed_oems_if_empty() -> None:
+    """Ensure seed OEMs exist (by id). Idempotent."""
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        _seed_oems(db)
+    finally:
+        db.close()
+
+
+def seed_suppliers_if_empty() -> None:
+    """Ensure seed suppliers exist (by id). Idempotent."""
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        _seed_suppliers(db)
+    finally:
+        db.close()
+
+
 def seed_shipping_if_empty() -> None:
     """Create shipping tables and seed only if no shipping suppliers exist."""
     Base.metadata.create_all(bind=engine)
@@ -183,6 +340,20 @@ def seed_shipping_if_empty() -> None:
     try:
         if db.query(ShippingSupplier).first():
             return
-        _create_seed_data(db)
+        _create_shipping_seed_data(db)
+    finally:
+        db.close()
+
+
+def seed_all_if_empty() -> None:
+    """Create all tables and seed OEMs, suppliers, and shipping data if empty."""
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        _seed_oems(db)
+        _seed_suppliers(db)
+        if db.query(ShippingSupplier).first():
+            return
+        _create_shipping_seed_data(db)
     finally:
         db.close()

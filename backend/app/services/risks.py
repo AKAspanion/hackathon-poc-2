@@ -127,11 +127,26 @@ def create_risk_from_dict(
     workflow_run_id: UUID | None = None,
 ) -> Risk:
     oem_id = data.get("oemId")
-    supplier_id, supplier_name = _resolve_supplier_id(
-        db,
-        oem_id,
-        data.get("affectedSupplier"),
-    )
+    # Use explicit supplierId from scope (OEM-supplier pair run) when present.
+    explicit_supplier_id = data.get("supplierId")
+    if explicit_supplier_id is not None and not isinstance(explicit_supplier_id, UUID):
+        try:
+            explicit_supplier_id = UUID(str(explicit_supplier_id))
+        except (ValueError, TypeError):
+            explicit_supplier_id = None
+    if explicit_supplier_id is not None:
+        supplier_id = explicit_supplier_id
+        supplier_name = data.get("supplierName") or data.get("affectedSupplier")
+        if isinstance(supplier_name, (list, tuple)):
+            supplier_name = str(supplier_name[0]) if supplier_name else None
+        elif supplier_name is not None:
+            supplier_name = str(supplier_name)
+    else:
+        supplier_id, supplier_name = _resolve_supplier_id(
+            db,
+            oem_id,
+            data.get("affectedSupplier"),
+        )
 
     raw_aff = data.get("affectedSupplier")
     suppliers_list: list[str] | None = None

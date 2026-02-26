@@ -53,5 +53,8 @@ if [ ! -f "$VENV_DIR/installed.flag" ] || [ "requirements.txt" -nt "$VENV_DIR/in
   touch "$VENV_DIR/installed.flag"
 fi
 
+# Create application database if it does not exist (uses .env / app.config)
+"$VENV_DIR/bin/python" ensure_db.py || true
+
 echo "Starting FastAPI backend on http://0.0.0.0:${PORT}"
 exec "$VENV_DIR/bin/python" -m uvicorn main:app --host 0.0.0.0 --port "$PORT" --reload

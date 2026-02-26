@@ -25,6 +25,11 @@ class WorkflowRun(Base):
         ForeignKey("oems.id", ondelete="CASCADE"),
         nullable=False,
     )
+    supplierId = Column(
+        UUID(as_uuid=True),
+        ForeignKey("suppliers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # Calendar date for the run (UTC).
     runDate = Column(Date, nullable=False, default=date.today)
@@ -37,3 +42,4 @@ class WorkflowRun(Base):
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
 
     oem = relationship("Oem", backref="workflow_runs")
+    supplier = relationship("Supplier", backref="workflow_runs")

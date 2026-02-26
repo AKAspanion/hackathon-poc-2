@@ -5,7 +5,6 @@ from typing import TypedDict, Any
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 
-from app.config import settings
 from app.services.langchain_llm import get_chat_model
 from app.services.agent_orchestrator import _extract_json
 from app.services.agent_types import OemScope
@@ -99,31 +98,31 @@ def _get_langchain_chain() -> Any | None:
                         "Weather JSON:\n{weather_items_json}\n\n"
                         "Return JSON of shape:\n"
                         "{{\n"
-                        '  \"risks\": [\n'
+                        '  "risks": [\n'
                         "    {{\n"
-                        '      \"title\": str,\n'
-                        '      \"description\": str,\n'
-                        '      \"severity\": \"low\" | \"medium\" | \"high\" '
-                        '| \"critical\",\n'
-                        '      \"affectedRegion\": str | null,\n'
-                        '      \"affectedSupplier\": str | null,\n'
-                        '      \"estimatedImpact\": str | null,\n'
-                        '      \"estimatedCost\": number | null,\n'
-                        '      \"weather_exposure_score\": number | null,\n'
-                        '      \"storm_risk\": number | null,\n'
-                        '      \"temperature_extreme_days\": number | null\n'
+                        '      "title": str,\n'
+                        '      "description": str,\n'
+                        '      "severity": "low" | "medium" | "high" '
+                        '| "critical",\n'
+                        '      "affectedRegion": str | null,\n'
+                        '      "affectedSupplier": str | null,\n'
+                        '      "estimatedImpact": str | null,\n'
+                        '      "estimatedCost": number | null,\n'
+                        '      "weather_exposure_score": number | null,\n'
+                        '      "storm_risk": number | null,\n'
+                        '      "temperature_extreme_days": number | null\n'
                         "    }}\n"
                         "  ],\n"
-                        '  \"opportunities\": [\n'
+                        '  "opportunities": [\n'
                         "    {{\n"
-                        '      \"title\": str,\n'
-                        '      \"description\": str,\n'
-                        '      \"type\": \"cost_saving\" | \"time_saving\" '
-                        '| \"quality_improvement\" | \"market_expansion\" '
-                        '| \"supplier_diversification\",\n'
-                        '      \"affectedRegion\": str | null,\n'
-                        '      \"potentialBenefit\": str | null,\n'
-                        '      \"estimatedValue\": number | null\n'
+                        '      "title": str,\n'
+                        '      "description": str,\n'
+                        '      "type": "cost_saving" | "time_saving" '
+                        '| "quality_improvement" | "market_expansion" '
+                        '| "supplier_diversification",\n'
+                        '      "affectedRegion": str | null,\n'
+                        '      "potentialBenefit": str | null,\n'
+                        '      "estimatedValue": number | null\n'
                         "    }}\n"
                         "  ]\n"
                         "}}\n"
@@ -310,9 +309,7 @@ async def run_weather_agent_graph(
                 "weatherExposure": {
                     "weather_exposure_score": r.get("weather_exposure_score"),
                     "storm_risk": r.get("storm_risk"),
-                    "temperature_extreme_days": r.get(
-                        "temperature_extreme_days"
-                    ),
+                    "temperature_extreme_days": r.get("temperature_extreme_days"),
                 }
             },
         }

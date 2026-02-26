@@ -21,7 +21,9 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
         self.active_connections.append(websocket)
-        logger.info("WebSocket connected. Active connections=%d", len(self.active_connections))
+        logger.info(
+            "WebSocket connected. Active connections=%d", len(self.active_connections)
+        )
 
     async def disconnect(self, websocket: WebSocket) -> None:
         try:
@@ -29,7 +31,10 @@ class ConnectionManager:
         except ValueError:
             # Already removed or unknown connection
             pass
-        logger.info("WebSocket disconnected. Active connections=%d", len(self.active_connections))
+        logger.info(
+            "WebSocket disconnected. Active connections=%d",
+            len(self.active_connections),
+        )
 
     async def broadcast(self, message: dict[str, Any]) -> None:
         if not self.active_connections:
@@ -57,7 +62,9 @@ async def broadcast_agent_status(status: dict[str, Any]) -> None:
     await manager.broadcast({"type": "agent_status", "status": status})
 
 
-async def broadcast_suppliers_snapshot(oem_id: str, suppliers: list[dict[str, Any]]) -> None:
+async def broadcast_suppliers_snapshot(
+    oem_id: str, suppliers: list[dict[str, Any]]
+) -> None:
     """
     Broadcast a snapshot of suppliers and their latest scores/risks.
     """
@@ -68,4 +75,3 @@ async def broadcast_suppliers_snapshot(oem_id: str, suppliers: list[dict[str, An
             "suppliers": suppliers,
         }
     )
-

@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.api.deps import get_current_oem
 from app.models.oem import Oem
-from app.schemas.mitigation_plan import CreateMitigationPlan, UpdateMitigationPlan, MitigationPlanResponse
+from app.schemas.mitigation_plan import (
+    CreateMitigationPlan,
+    UpdateMitigationPlan,
+    MitigationPlanResponse,
+)
 from app.services.mitigation_plans import get_all, get_one, create_plan, update_plan
 
 router = APIRouter(prefix="/mitigation-plans", tags=["mitigation-plans"])

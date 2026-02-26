@@ -123,7 +123,7 @@ sequenceDiagram
 
 ## 3. Weather Agent Graph (LangGraph)
 
-Defined in `backend/app/services/weather_agent_graph.py`. Linear pipeline: normalize weather data → LLM/heuristic → risks + opportunities.
+Defined in `backend/app/agents/weather.py`. Linear pipeline: normalize weather data → LLM/heuristic → risks + opportunities.
 
 ```mermaid
 flowchart LR
@@ -143,7 +143,7 @@ flowchart LR
 
 ## 4. News Agent Graph (LangGraph)
 
-Defined in `backend/app/services/news_agent_graph.py`. Same structure as Weather; context (supplier vs global) changes the prompt.
+Defined in `backend/app/agents/news.py`. Same structure as Weather; context (supplier vs global) changes the prompt.
 
 ```mermaid
 flowchart LR
@@ -163,7 +163,7 @@ flowchart LR
 
 ## 5. Shipment Agent Graph (LangGraph)
 
-Defined in `backend/app/services/shipment_agent_graph.py`. Normalize shipping data → LLM or heuristic → shipping risks.
+Defined in `backend/app/agents/shipment.py`. Normalize shipping data → LLM or heuristic → shipping risks.
 
 ```mermaid
 flowchart LR
@@ -182,7 +182,7 @@ flowchart LR
 
 ## 6. Legacy Weather Risk Agent (app/agent/graph.py)
 
-Used for single-city weather risk (e.g. “assess supply chain weather risk for city X”). Tool-calling loop: agent → tools or fallback_tools → back to agent until no tool calls.
+Defined in `backend/app/agents/legacy_weather.py`. Used for single-city weather risk (e.g. “assess supply chain weather risk for city X”). Tool-calling loop: agent → tools or fallback_tools → back to agent until no tool calls.
 
 ```mermaid
 flowchart TB
@@ -201,7 +201,7 @@ flowchart TB
 
 - **State:** `AgentState` (messages, city, weather_data, risk_dict).
 - **Tools:** `get_weather(city)`, `compute_supply_chain_risk(weather_key)`.
-- **Entry:** `run_weather_risk_agent(city)` with system + user message.
+- **Entry:** `run_weather_risk_agent(city)` (from `app.agents.legacy_weather`) with system + user message.
 - **Exit:** Final state with `weather_data`, `risk_dict`, and optional `llm_summary` (from last AI message or a fallback summary prompt).
 
 ---
@@ -222,15 +222,15 @@ flowchart TB
 
 ---
 
-## 8. File reference
+## 8. File reference (grouped by workflow)
 
-| Component              | File(s) |
-|------------------------|--------|
-| Orchestration          | `backend/app/services/agent_service.py` |
-| Weather Agent (pipeline) | `backend/app/services/weather_agent_graph.py` |
-| News Agent            | `backend/app/services/news_agent_graph.py` |
-| Shipment Agent        | `backend/app/services/shipment_agent_graph.py` |
-| Legacy city weather agent | `backend/app/agent/graph.py` |
-| Data sources          | `backend/app/services/data_sources/manager.py`, `*/*.py` |
-| Mitigation / opportunity plans | `backend/app/services/agent_orchestrator.py`, `mitigation_plans.py` |
-| API trigger            | `backend/app/api/routes/agent.py` |
+| Layer / Component      | Location |
+|------------------------|----------|
+| **Trigger**            | `backend/app/api/routes/agent.py` |
+| **Orchestration**      | `backend/app/orchestration/agent_service.py` |
+| **Data layer**         | `backend/app/data/` (manager.py, base.py, weather.py, news.py, traffic.py, market.py, shipping.py, trends.py, excel.py) |
+| **Domain agents**      | `backend/app/agents/` (weather.py, news.py, shipment.py, legacy_weather.py, shipment_weather.py) |
+| **Persistence / plans** | `backend/app/services/agent_orchestrator.py`, `mitigation_plans.py`, `risks.py`, `opportunities.py` |
+| **Broadcast**          | `backend/app/services/websocket_manager.py` |
+
+Backward compatibility: `app.agent` re-exports `run_weather_risk_agent` and `run_shipment_weather_agent` from `app.agents`.

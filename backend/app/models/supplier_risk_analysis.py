@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Numeric, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -52,4 +52,3 @@ class SupplierRiskAnalysis(Base):
     oem = relationship("Oem", backref="supplier_risk_analysis")
     workflow_run = relationship("WorkflowRun", backref="supplier_risk_analysis")
     supplier = relationship("Supplier", backref="risk_analysis_entries")
-

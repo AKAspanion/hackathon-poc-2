@@ -29,8 +29,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.trend_insight import TrendInsight
-from app.services.data_sources.excel import load_all_from_excel, DEFAULT_EXCEL_PATH
-from app.services.data_sources.trends import TrendDataSource
+from app.data.excel import load_all_from_excel, DEFAULT_EXCEL_PATH
+from app.data.trends import TrendDataSource
 from app.services.llm_client import TrendContext, TrendItem, get_llm_client, Insight
 
 if TYPE_CHECKING:
@@ -42,6 +42,7 @@ _DEFAULT_OEM_NAME = "Demo Manufacturer"
 
 
 # ── Query builders ────────────────────────────────────────────────────
+
 
 def _material_queries(materials: list[dict]) -> list[str]:
     queries = []
@@ -80,6 +81,7 @@ def _global_queries(global_ctx: list[dict]) -> list[str]:
 
 # ── Trend item normaliser (DataSourceResult → TrendItem) ──────────────
 
+
 def _to_trend_item(result_dict: dict) -> TrendItem | None:
     data = result_dict.get("data") or {}
     if not data:
@@ -97,6 +99,7 @@ def _to_trend_item(result_dict: dict) -> TrendItem | None:
 
 
 # ── Async core ────────────────────────────────────────────────────────
+
 
 async def run_trend_insights_cycle_async(
     db: Session,
@@ -126,21 +129,27 @@ async def run_trend_insights_cycle_async(
 
     logger.info(
         "Querying trends: %d material, %d supplier, %d global queries",
-        len(mat_queries), len(sup_queries), len(glb_queries),
+        len(mat_queries),
+        len(sup_queries),
+        len(glb_queries),
     )
 
     # 3. Fetch trend data
     trend_source = TrendDataSource()
     await trend_source.initialize({})
-    raw_results = await trend_source.fetch_data({
-        "material_queries": mat_queries,
-        "supplier_queries": sup_queries,
-        "global_queries": glb_queries,
-    })
+    raw_results = await trend_source.fetch_data(
+        {
+            "material_queries": mat_queries,
+            "supplier_queries": sup_queries,
+            "global_queries": glb_queries,
+        }
+    )
 
     trend_items: list[TrendItem] = []
     for result in raw_results:
-        item = _to_trend_item(result.to_dict() if hasattr(result, "to_dict") else result)
+        item = _to_trend_item(
+            result.to_dict() if hasattr(result, "to_dict") else result
+        )
         if item and item.title:
             trend_items.append(item)
 
@@ -164,6 +173,7 @@ async def run_trend_insights_cycle_async(
     if not insights:
         logger.warning("LLM returned no insights; using mock insights.")
         from app.services.llm_client import _mock_insights
+
         insights = _mock_insights(ctx)
 
     logger.info("Received %d insights from LLM", len(insights))
@@ -199,6 +209,7 @@ async def run_trend_insights_cycle_async(
 
 
 # ── Sync wrapper (for APScheduler) ───────────────────────────────────
+
 
 def run_trend_insights_cycle(
     db: Session,

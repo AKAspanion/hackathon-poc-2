@@ -21,4 +21,3 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception:
         # Normal disconnects and errors are handled uniformly
         await manager.disconnect(websocket)
-

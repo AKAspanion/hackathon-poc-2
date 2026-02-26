@@ -1,12 +1,11 @@
 import logging
 from typing import Any
 
-from app.services.data_sources.base import DataSourceResult
-from app.services.data_sources.weather import WeatherDataSource
-from app.services.data_sources.news import NewsDataSource
-from app.services.data_sources.traffic import TrafficDataSource
-from app.services.data_sources.market import MarketDataSource
-from app.services.data_sources.shipping import ShippingRoutesDataSource
+from app.data.weather import WeatherDataSource
+from app.data.news import NewsDataSource
+from app.data.traffic import TrafficDataSource
+from app.data.market import MarketDataSource
+from app.data.shipping import ShippingRoutesDataSource
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +55,12 @@ class DataSourceManager:
                     data = await source.fetch_data(params)
                     # Normalize to list of dicts (like Nest: sourceType, timestamp, data)
                     results[type_name] = [r.to_dict() for r in data]
-                    logger.info('Data source "%s": fetched %d items', type_name, len(data))
+                    logger.info(
+                        'Data source "%s": fetched %d items', type_name, len(data)
+                    )
                 else:
                     results[type_name] = []
-            except Exception as e:
+            except Exception:
                 logger.exception('Data source "%s": fetch failed', type_name)
                 results[type_name] = []
         return results

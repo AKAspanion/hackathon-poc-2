@@ -5,8 +5,18 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.api.deps import get_current_oem
 from app.models.oem import Oem
-from app.schemas.opportunity import CreateOpportunity, UpdateOpportunity, OpportunityResponse
-from app.services.opportunities import get_all, get_one, create_opportunity, update_opportunity, get_stats
+from app.schemas.opportunity import (
+    CreateOpportunity,
+    UpdateOpportunity,
+    OpportunityResponse,
+)
+from app.services.opportunities import (
+    get_all,
+    get_one,
+    create_opportunity,
+    update_opportunity,
+    get_stats,
+)
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 

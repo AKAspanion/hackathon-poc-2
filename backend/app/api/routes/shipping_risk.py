@@ -18,14 +18,22 @@ from app.services.shipping_risk import calculate_shipping_risk
 router = APIRouter(prefix="/shipping/shipping-risk", tags=["shipping"])
 
 
-@router.post("/{supplier_id}", response_model=ShippingRiskResult, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{supplier_id}",
+    response_model=ShippingRiskResult,
+    status_code=status.HTTP_201_CREATED,
+)
 def run_for_supplier(
     supplier_id: int,
     db: Session = Depends(get_db),
 ) -> ShippingRiskResult:
-    supplier = db.query(ShippingSupplier).filter(ShippingSupplier.id == supplier_id).first()
+    supplier = (
+        db.query(ShippingSupplier).filter(ShippingSupplier.id == supplier_id).first()
+    )
     if not supplier:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Supplier not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Supplier not found"
+        )
 
     result_dict = calculate_shipping_risk(supplier, db)
 

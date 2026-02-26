@@ -97,31 +97,31 @@ def _get_prompt(context: Literal["supplier", "global"]) -> ChatPromptTemplate:
                             "News JSON:\n{news_items_json}\n\n"
                             "Return JSON of shape:\n"
                             "{{\n"
-                            '  \"risks\": [\n'
+                            '  "risks": [\n'
                             "    {{\n"
-                            '      \"title\": str,\n'
-                            '      \"description\": str,\n'
-                            '      \"severity\": \"low\" | \"medium\" | '
-                            '\"high\" | \"critical\",\n'
-                            '      \"affectedRegion\": str | null,\n'
-                            '      \"affectedSupplier\": str | null,\n'
-                            '      \"estimatedImpact\": str | null,\n'
-                            '      \"estimatedCost\": number | null,\n'
-                            '      \"risk_type\": str,\n'
-                            '      \"source\": str | null\n'
+                            '      "title": str,\n'
+                            '      "description": str,\n'
+                            '      "severity": "low" | "medium" | '
+                            '"high" | "critical",\n'
+                            '      "affectedRegion": str | null,\n'
+                            '      "affectedSupplier": str | null,\n'
+                            '      "estimatedImpact": str | null,\n'
+                            '      "estimatedCost": number | null,\n'
+                            '      "risk_type": str,\n'
+                            '      "source": str | null\n'
                             "    }}\n"
                             "  ],\n"
-                            '  \"opportunities\": [\n'
+                            '  "opportunities": [\n'
                             "    {{\n"
-                            '      \"title\": str,\n'
-                            '      \"description\": str,\n'
-                            '      \"type\": \"cost_saving\" | '
-                            '\"time_saving\" | \"quality_improvement\" | '
-                            '\"market_expansion\" | '
-                            '\"supplier_diversification\",\n'
-                            '      \"affectedRegion\": str | null,\n'
-                            '      \"potentialBenefit\": str | null,\n'
-                            '      \"estimatedValue\": number | null\n'
+                            '      "title": str,\n'
+                            '      "description": str,\n'
+                            '      "type": "cost_saving" | '
+                            '"time_saving" | "quality_improvement" | '
+                            '"market_expansion" | '
+                            '"supplier_diversification",\n'
+                            '      "affectedRegion": str | null,\n'
+                            '      "potentialBenefit": str | null,\n'
+                            '      "estimatedValue": number | null\n'
                             "    }}\n"
                             "  ]\n"
                             "}}\n"
@@ -152,24 +152,24 @@ def _get_prompt(context: Literal["supplier", "global"]) -> ChatPromptTemplate:
                         "News JSON:\n{news_items_json}\n\n"
                         "Return JSON of shape:\n"
                         "{{\n"
-                        '  \"risks\": [\n'
+                        '  "risks": [\n'
                         "    {{\n"
-                        '      \"title\": str,\n'
-                        '      \"description\": str,\n'
-                        '      \"severity\": \"low\" | \"medium\" | '
-                        '\"high\" | \"critical\",\n'
-                        '      \"affectedRegion\": str | null,\n'
-                        '      \"affectedSupplier\": null,\n'
-                        '      \"estimatedImpact\": str | null,\n'
-                        '      \"estimatedCost\": number | null,\n'
-                        '      \"risk_type\": str,\n'
-                        '      \"source\": str | null\n'
+                        '      "title": str,\n'
+                        '      "description": str,\n'
+                        '      "severity": "low" | "medium" | '
+                        '"high" | "critical",\n'
+                        '      "affectedRegion": str | null,\n'
+                        '      "affectedSupplier": null,\n'
+                        '      "estimatedImpact": str | null,\n'
+                        '      "estimatedCost": number | null,\n'
+                        '      "risk_type": str,\n'
+                        '      "source": str | null\n'
                         "    }}\n"
                         "  ],\n"
-                        '  \"opportunities\": []\n'
+                        '  "opportunities": []\n'
                         "}}\n"
                         "If no material global risks, return "
-                        "{{\"risks\": [], \"opportunities\": []}}."
+                        '{{"risks": [], "opportunities": []}}.'
                     ),
                 ),
             ]

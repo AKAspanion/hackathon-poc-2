@@ -108,7 +108,9 @@ def create_opportunity_from_dict(
     return opp
 
 
-def update_opportunity(db: Session, id: UUID, dto: UpdateOpportunity) -> Opportunity | None:
+def update_opportunity(
+    db: Session, id: UUID, dto: UpdateOpportunity
+) -> Opportunity | None:
     opp = get_one(db, id)
     if not opp:
         return None

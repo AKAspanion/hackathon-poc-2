@@ -6,6 +6,7 @@ Shipment Weather Exposure Agent
 - Day 2+: uses historical API for past days, forecast for future days
 - Computes per-day risk and structures a Risk Analysis Agent payload
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,7 +23,11 @@ from app.schemas.weather_agent import (
     RiskSummary,
     ShipmentWeatherExposureResponse,
 )
-from app.services.weather_service import get_current_weather, get_forecast, get_historical_weather
+from app.services.weather_service import (
+    get_current_weather,
+    get_forecast,
+    get_historical_weather,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +155,13 @@ def _build_risk_analysis_payload(
     unique_concerns = list(dict.fromkeys(all_concerns))
     unique_actions = list(dict.fromkeys(all_actions))
 
-    factor_names = ["transportation", "power_outage", "production", "port_and_route", "raw_material_delay"]
+    factor_names = [
+        "transportation",
+        "power_outage",
+        "production",
+        "port_and_route",
+        "raw_material_delay",
+    ]
     factor_max_scores: dict[str, float] = {f: 0.0 for f in factor_names}
     for d in days:
         for factor in d.risk.factors:
@@ -167,7 +178,9 @@ def _build_risk_analysis_payload(
         },
         "exposure_summary": {
             "average_risk_score": round(avg_score, 1),
-            "peak_risk_score": round(peak_risk_day.risk.overall_score, 1) if peak_risk_day else 0,
+            "peak_risk_score": round(peak_risk_day.risk.overall_score, 1)
+            if peak_risk_day
+            else 0,
             "peak_risk_day": peak_risk_day.day_number if peak_risk_day else None,
             "peak_risk_date": peak_risk_day.date if peak_risk_day else None,
             "high_risk_day_count": len(high_risk_days),
@@ -192,7 +205,9 @@ def _build_risk_analysis_payload(
                 },
                 "risk_score": d.risk.overall_score,
                 "risk_level": d.risk.overall_level,
-                "key_concern": d.risk.primary_concerns[0] if d.risk.primary_concerns else "No significant risk",
+                "key_concern": d.risk.primary_concerns[0]
+                if d.risk.primary_concerns
+                else "No significant risk",
             }
             for d in days
         ],
@@ -274,13 +289,21 @@ async def run_shipment_weather_agent(
             forecast_data = supplier_forecast if i < midpoint else oem_forecast
             if forecast_data:
                 weather_snap = _extract_day_weather_from_forecast(
-                    forecast_data, target_date_str, day_number, location_label, city_used
+                    forecast_data,
+                    target_date_str,
+                    day_number,
+                    location_label,
+                    city_used,
                 )
             if not weather_snap:
                 fresh_forecast = await get_forecast(waypoint_city, days=14)
                 if fresh_forecast:
                     weather_snap = _extract_day_weather_from_forecast(
-                        fresh_forecast, target_date_str, day_number, location_label, city_used
+                        fresh_forecast,
+                        target_date_str,
+                        day_number,
+                        location_label,
+                        city_used,
                     )
 
         if not weather_snap:
@@ -308,14 +331,20 @@ async def run_shipment_weather_agent(
         ]
         risk_dict_serialized = {**risk_raw, "factors": factors_serialized}
         if hasattr(risk_dict_serialized.get("overall_level"), "value"):
-            risk_dict_serialized["overall_level"] = risk_dict_serialized["overall_level"].value
+            risk_dict_serialized["overall_level"] = risk_dict_serialized[
+                "overall_level"
+            ].value
         for f in risk_dict_serialized["factors"]:
             if hasattr(f.get("level"), "value"):
                 f["level"] = f["level"].value
 
         risk_summary = RiskSummary(**risk_dict_serialized)
 
-        concern_text = risk_summary.primary_concerns[0] if risk_summary.primary_concerns else "No significant risk"
+        concern_text = (
+            risk_summary.primary_concerns[0]
+            if risk_summary.primary_concerns
+            else "No significant risk"
+        )
         risk_summary_text = (
             f"Day {day_number} ({target_date_str}): {location_label} — "
             f"{weather_snap.condition}, {weather_snap.temp_c:.1f}°C, wind {weather_snap.wind_kph:.0f} km/h. "
@@ -380,7 +409,9 @@ async def run_shipment_weather_agent(
             num_predict=500,
         )
         resp = await llm.ainvoke([HumanMessage(content=prompt)])
-        agent_summary = (resp.content if hasattr(resp, "content") else str(resp)).strip() or None
+        agent_summary = (
+            resp.content if hasattr(resp, "content") else str(resp)
+        ).strip() or None
     except Exception as e:
         logger.warning("LLM summary failed (non-fatal): %s", e)
 

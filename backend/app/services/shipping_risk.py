@@ -68,7 +68,9 @@ def calculate_historical_delay_risk(historical_delay_percentage: float | None) -
     return max(0.0, min(historical_delay_percentage / 100.0, 1.0))
 
 
-def calculate_redundancy_risk(alternate_route_available: bool, is_critical_supplier: bool) -> float:
+def calculate_redundancy_risk(
+    alternate_route_available: bool, is_critical_supplier: bool
+) -> float:
     if is_critical_supplier and not alternate_route_available:
         return 1.0
     if not is_critical_supplier and not alternate_route_available:
@@ -83,7 +85,9 @@ def calculate_shipping_risk_heuristic(supplier: ShippingSupplier) -> dict[str, A
     distance_risk = calculate_distance_risk(supplier.distance_km)
     transit_risk = calculate_transit_risk(supplier.avg_transit_days)
     port_risk = calculate_port_congestion_risk(supplier.port_used)
-    historical_risk = calculate_historical_delay_risk(supplier.historical_delay_percentage)
+    historical_risk = calculate_historical_delay_risk(
+        supplier.historical_delay_percentage
+    )
     redundancy_risk = calculate_redundancy_risk(
         supplier.alternate_route_available, supplier.is_critical_supplier
     )
@@ -133,7 +137,9 @@ def calculate_shipping_risk_heuristic(supplier: ShippingSupplier) -> dict[str, A
 
     if historical_risk >= 0.5:
         risk_factors.append("High historical delay")
-        recommended_actions.append("Increase buffer stock and monitor carrier performance")
+        recommended_actions.append(
+            "Increase buffer stock and monitor carrier performance"
+        )
 
     if mode_risk >= 0.6 and (supplier.shipping_mode or "").lower() == "sea":
         risk_factors.append("Slow and disruption-prone shipping mode")
@@ -145,11 +151,15 @@ def calculate_shipping_risk_heuristic(supplier: ShippingSupplier) -> dict[str, A
 
     if distance_risk >= 0.6:
         risk_factors.append("Long transport distance")
-        recommended_actions.append("Increase safety stock and review routing optimization")
+        recommended_actions.append(
+            "Increase safety stock and review routing optimization"
+        )
 
     if not risk_factors:
         risk_factors.append("No major risk drivers detected")
-        recommended_actions.append("Maintain current logistics plan with periodic review")
+        recommended_actions.append(
+            "Maintain current logistics plan with periodic review"
+        )
 
     return {
         "shipping_risk_score": round(shipping_risk_score, 2),

@@ -38,7 +38,9 @@ class ShippingSupplier(Base):
         nullable=False,
     )
 
-    shipments = relationship("Shipment", back_populates="supplier", cascade="all, delete-orphan")
+    shipments = relationship(
+        "Shipment", back_populates="supplier", cascade="all, delete-orphan"
+    )
     risk_assessments = relationship(
         "ShippingRiskAssessment",
         back_populates="supplier",

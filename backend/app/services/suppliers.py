@@ -119,30 +119,34 @@ def get_all(db: Session, oem_id: UUID) -> list[Supplier]:
 
 
 def get_one(db: Session, id: UUID, oem_id: UUID) -> Supplier | None:
-    return db.query(Supplier).filter(Supplier.id == id, Supplier.oemId == oem_id).first()
+    return (
+        db.query(Supplier).filter(Supplier.id == id, Supplier.oemId == oem_id).first()
+    )
 
 
 def get_risks_by_supplier(db: Session) -> dict:
     """
     Lightweight aggregation used by the existing UI to show simple counts.
     """
-    risks = db.query(
-        Risk.id,
-        Risk.title,
-        Risk.severity,
-        Risk.affectedSupplier,
-        Risk.affectedSuppliers,
-        Risk.createdAt,
-    ).order_by(Risk.createdAt.desc()).all()
+    risks = (
+        db.query(
+            Risk.id,
+            Risk.title,
+            Risk.severity,
+            Risk.affectedSupplier,
+            Risk.affectedSuppliers,
+            Risk.createdAt,
+        )
+        .order_by(Risk.createdAt.desc())
+        .all()
+    )
     out: Dict[str, dict] = {}
     for r in risks:
         # Support multiple suppliers per risk; fall back to single label.
         names: list[str] = []
         if getattr(r, "affectedSuppliers", None):
             names = [
-                (str(n).strip())
-                for n in (r.affectedSuppliers or [])
-                if str(n).strip()
+                (str(n).strip()) for n in (r.affectedSuppliers or []) if str(n).strip()
             ]
         elif r.affectedSupplier:
             names = [r.affectedSupplier.strip()]
@@ -152,9 +156,7 @@ def get_risks_by_supplier(db: Session) -> dict:
             if key not in out:
                 out[key] = {"count": 0, "bySeverity": {}, "latest": None}
             out[key]["count"] += 1
-            sev = str(
-                r.severity.value if hasattr(r.severity, "value") else r.severity
-            )
+            sev = str(r.severity.value if hasattr(r.severity, "value") else r.severity)
             out[key]["bySeverity"][sev] = out[key]["bySeverity"].get(sev, 0) + 1
             if out[key]["latest"] is None:
                 out[key]["latest"] = {
@@ -182,11 +184,14 @@ def _compute_agent_score(risks: List[Risk]) -> Tuple[float, Dict[str, int]]:
     severity_counts: Dict[str, int] = {}
     weighted_sum = 0
     for r in risks:
-        sev_value = getattr(
-            r.severity,
-            "value",
-            r.severity,
-        ) or RiskSeverity.MEDIUM.value
+        sev_value = (
+            getattr(
+                r.severity,
+                "value",
+                r.severity,
+            )
+            or RiskSeverity.MEDIUM.value
+        )
         sev = str(sev_value).lower()
         severity_counts[sev] = severity_counts.get(sev, 0) + 1
         weight = SEVERITY_WEIGHT.get(sev, SEVERITY_WEIGHT["medium"])
@@ -238,19 +243,20 @@ def _build_swarm_summary_for_supplier(risks: List[Risk]) -> Optional[dict]:
     news_score, news_counts = _compute_agent_score(news_risks)
 
     final_score = round(
-        (weather_score * 0.4)
-        + (shipping_score * 0.3)
-        + (news_score * 0.3)
+        (weather_score * 0.4) + (shipping_score * 0.3) + (news_score * 0.3)
     )
     final_level = _score_to_risk_level(final_score)
 
     # Top drivers: take the most recent, highest-severity risk titles
     def _severity_weight(r: Risk) -> int:
-        sev_value = getattr(
-            r.severity,
-            "value",
-            r.severity,
-        ) or RiskSeverity.MEDIUM.value
+        sev_value = (
+            getattr(
+                r.severity,
+                "value",
+                r.severity,
+            )
+            or RiskSeverity.MEDIUM.value
+        )
         sev = str(sev_value).lower()
         return SEVERITY_WEIGHT.get(sev, SEVERITY_WEIGHT["medium"])
 
@@ -323,7 +329,9 @@ def _build_swarm_summary_for_supplier(risks: List[Risk]) -> Optional[dict]:
 
     agents: List[dict] = [
         _build_agent_result("WEATHER", weather_score, weather_risks, weather_counts),
-        _build_agent_result("SHIPPING", shipping_score, shipping_risks, shipping_counts),
+        _build_agent_result(
+            "SHIPPING", shipping_score, shipping_risks, shipping_counts
+        ),
         _build_agent_result("NEWS", news_score, news_risks, news_counts),
     ]
 
@@ -355,9 +363,7 @@ def get_swarm_summaries_by_supplier(
         names: list[str] = []
         if getattr(r, "affectedSuppliers", None):
             names = [
-                (str(n).strip())
-                for n in (r.affectedSuppliers or [])
-                if str(n).strip()
+                (str(n).strip()) for n in (r.affectedSuppliers or []) if str(n).strip()
             ]
         elif r.affectedSupplier:
             names = [r.affectedSupplier.strip()]

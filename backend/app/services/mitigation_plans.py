@@ -89,6 +89,7 @@ def create_plan_from_dict(
     due = plan_data.get("dueDate")
     if isinstance(due, str):
         from datetime import datetime
+
         try:
             due = datetime.strptime(due[:10], "%Y-%m-%d").date()
         except ValueError:

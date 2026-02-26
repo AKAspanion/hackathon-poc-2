@@ -30,7 +30,7 @@ from typing import Literal
 import httpx
 
 from app.config import settings
-from app.services.data_sources.base import BaseDataSource, DataSourceResult
+from app.data.base import BaseDataSource, DataSourceResult
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,9 @@ class TrendDataSource(BaseDataSource):
             results.extend(items)
 
         if not results:
-            results = self._mock_results(material_queries, supplier_queries, global_queries)
+            results = self._mock_results(
+                material_queries, supplier_queries, global_queries
+            )
 
         return results
 
@@ -117,17 +119,19 @@ class TrendDataSource(BaseDataSource):
                 if resp.status_code == 200:
                     articles = resp.json().get("articles") or []
                     return [
-                        self._create_result(
-                            self._normalise_article(art, level, query)
-                        )
+                        self._create_result(self._normalise_article(art, level, query))
                         for art in articles
                     ]
                 logger.warning(
                     "NewsAPI returned %d for query '%s': %s",
-                    resp.status_code, query, resp.text[:200],
+                    resp.status_code,
+                    query,
+                    resp.text[:200],
                 )
         except Exception as exc:
-            logger.exception("TrendDataSource fetch error for query '%s': %s", query, exc)
+            logger.exception(
+                "TrendDataSource fetch error for query '%s': %s", query, exc
+            )
 
         return self._mock_for_query(query, level)
 
@@ -139,7 +143,8 @@ class TrendDataSource(BaseDataSource):
             "title": art.get("title") or "",
             "summary": art.get("description") or art.get("content") or "",
             "source": (art.get("source") or {}).get("name") or "Unknown",
-            "published_at": art.get("publishedAt") or datetime.utcnow().isoformat() + "Z",
+            "published_at": art.get("publishedAt")
+            or datetime.utcnow().isoformat() + "Z",
             "url": art.get("url"),
             "relevance_score": 0.8,
             "level": level,
@@ -153,19 +158,24 @@ class TrendDataSource(BaseDataSource):
         items = _MOCK_ARTICLES.get(level, [])
         # pick the first 3 that loosely match the query keyword
         q_lower = query.lower()
-        matched = [a for a in items if any(w in a["title"].lower() for w in q_lower.split())]
+        matched = [
+            a for a in items if any(w in a["title"].lower() for w in q_lower.split())
+        ]
         if not matched:
             matched = items[:3]
         out = []
         for i, art in enumerate(matched[:3]):
             out.append(
-                self._create_result({
-                    **art,
-                    "published_at": (now - timedelta(hours=i * 6)).isoformat() + "Z",
-                    "relevance_score": 0.7 - i * 0.05,
-                    "level": level,
-                    "query": query,
-                })
+                self._create_result(
+                    {
+                        **art,
+                        "published_at": (now - timedelta(hours=i * 6)).isoformat()
+                        + "Z",
+                        "relevance_score": 0.7 - i * 0.05,
+                        "level": level,
+                        "query": query,
+                    }
+                )
             )
         return out
 

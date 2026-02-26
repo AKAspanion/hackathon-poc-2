@@ -193,15 +193,9 @@ def update_risk(db: Session, id: UUID, dto: UpdateRisk) -> Risk | None:
 
 def get_stats(db: Session) -> dict:
     total = db.query(func.count(Risk.id)).scalar() or 0
-    by_status = (
-        db.query(Risk.status, func.count(Risk.id))
-        .group_by(Risk.status)
-        .all()
-    )
+    by_status = db.query(Risk.status, func.count(Risk.id)).group_by(Risk.status).all()
     by_severity = (
-        db.query(Risk.severity, func.count(Risk.id))
-        .group_by(Risk.severity)
-        .all()
+        db.query(Risk.severity, func.count(Risk.id)).group_by(Risk.severity).all()
     )
     return {
         "total": total,

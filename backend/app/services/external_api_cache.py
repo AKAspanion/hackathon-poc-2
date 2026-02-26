@@ -3,6 +3,7 @@ Simple in-memory cache for external API requests (e.g. news, weather).
 Same URL returns cached result for 1 hour, and logs requests/responses
 to the database for observability.
 """
+
 import asyncio
 import logging
 import time

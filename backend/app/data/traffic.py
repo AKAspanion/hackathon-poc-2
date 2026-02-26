@@ -1,5 +1,5 @@
 import random
-from app.services.data_sources.base import BaseDataSource, DataSourceResult
+from app.data.base import BaseDataSource, DataSourceResult
 
 
 class TrafficDataSource(BaseDataSource):
@@ -22,13 +22,17 @@ class TrafficDataSource(BaseDataSource):
         for route in routes:
             delay = random.randint(0, 120)
             congestion = random.choice(["low", "medium", "high", "severe"])
-            results.append(self._create_result({
-                "origin": route["origin"],
-                "destination": route["destination"],
-                "estimatedDelay": delay,
-                "congestionLevel": congestion,
-                "averageSpeed": random.randint(20, 80),
-                "incidents": random.randint(0, 3),
-                "routeStatus": "delayed" if delay > 60 else "normal",
-            }))
+            results.append(
+                self._create_result(
+                    {
+                        "origin": route["origin"],
+                        "destination": route["destination"],
+                        "estimatedDelay": delay,
+                        "congestionLevel": congestion,
+                        "averageSpeed": random.randint(20, 80),
+                        "incidents": random.randint(0, 3),
+                        "routeStatus": "delayed" if delay > 60 else "normal",
+                    }
+                )
+            )
         return results

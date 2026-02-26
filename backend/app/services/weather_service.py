@@ -26,7 +26,11 @@ async def get_current_weather(city: str) -> dict[str, Any] | None:
     q = _location_query(city)
     if not q:
         return None
-    params: dict[str, str | int] = {"key": settings.weather_api_key, "q": q, "aqi": "no"}
+    params: dict[str, str | int] = {
+        "key": settings.weather_api_key,
+        "q": q,
+        "aqi": "no",
+    }
     url = f"{BASE_URL}/current.json"
 
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -40,11 +44,17 @@ async def get_current_weather(city: str) -> dict[str, Any] | None:
                 if resolved:
                     r2 = await client.get(
                         url,
-                        params={"key": settings.weather_api_key, "q": resolved, "aqi": "no"},
+                        params={
+                            "key": settings.weather_api_key,
+                            "q": resolved,
+                            "aqi": "no",
+                        },
                     )
                     r2.raise_for_status()
                     return r2.json()
-            logger.error("Weather API error: %s %s", e.response.status_code, e.response.text)
+            logger.error(
+                "Weather API error: %s %s", e.response.status_code, e.response.text
+            )
             return None
         except Exception as e:
             logger.exception("Weather API failed: %s", e)

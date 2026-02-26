@@ -37,4 +37,3 @@ class WorkflowRun(Base):
     createdAt = Column(DateTime(timezone=True), server_default=func.now())
 
     oem = relationship("Oem", backref="workflow_runs")
-

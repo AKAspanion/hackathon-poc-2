@@ -20,10 +20,18 @@ class LocationQuery(BaseModel):
 
 
 class ShipmentInput(BaseModel):
-    supplier_city: str = Field(..., min_length=1, max_length=100, description="Origin city (Supplier)")
-    oem_city: str = Field(..., min_length=1, max_length=100, description="Destination city (OEM)")
-    shipment_start_date: str = Field(..., description="Shipment start date in YYYY-MM-DD format")
-    transit_days: int = Field(..., ge=1, le=30, description="Estimated transit duration in days")
+    supplier_city: str = Field(
+        ..., min_length=1, max_length=100, description="Origin city (Supplier)"
+    )
+    oem_city: str = Field(
+        ..., min_length=1, max_length=100, description="Destination city (OEM)"
+    )
+    shipment_start_date: str = Field(
+        ..., description="Shipment start date in YYYY-MM-DD format"
+    )
+    transit_days: int = Field(
+        ..., ge=1, le=30, description="Estimated transit duration in days"
+    )
 
 
 class RiskFactor(BaseModel):

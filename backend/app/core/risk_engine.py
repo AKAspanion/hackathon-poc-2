@@ -26,7 +26,22 @@ def _transportation_risk(current: dict[str, Any]) -> RiskFactor:
     vis_km = float(current.get("vis_km") or 10)
     condition = current.get("condition") or {}
     code = int(condition.get("code", 1000))
-    is_snow_ice = code in (1063, 1066, 1069, 1072, 1210, 1213, 1216, 1219, 1222, 1225, 1237, 1255, 1261, 1264)
+    is_snow_ice = code in (
+        1063,
+        1066,
+        1069,
+        1072,
+        1210,
+        1213,
+        1216,
+        1219,
+        1222,
+        1225,
+        1237,
+        1255,
+        1261,
+        1264,
+    )
 
     score = 0.0
     reasons: list[str] = []
@@ -54,7 +69,11 @@ def _transportation_risk(current: dict[str, Any]) -> RiskFactor:
 
     score = _clamp_score(score)
     level = _level_from_score(score)
-    summary = "; ".join(reasons) if reasons else "No significant transport risk from current weather."
+    summary = (
+        "; ".join(reasons)
+        if reasons
+        else "No significant transport risk from current weather."
+    )
     mitigation = None
     if level in (RiskLevel.HIGH, RiskLevel.CRITICAL):
         mitigation = "Consider alternate routes, delay non-urgent shipments, and confirm port/road status before dispatch."
@@ -93,7 +112,9 @@ def _power_outage_risk(current: dict[str, Any]) -> RiskFactor:
 
     score = _clamp_score(score)
     level = _level_from_score(score)
-    summary = "; ".join(reasons) if reasons else "Low power outage risk from current weather."
+    summary = (
+        "; ".join(reasons) if reasons else "Low power outage risk from current weather."
+    )
     mitigation = None
     if level in (RiskLevel.HIGH, RiskLevel.CRITICAL):
         mitigation = "Prepare backup power and prioritize critical loads; coordinate with local utility for outage alerts."
@@ -137,7 +158,9 @@ def _production_risk(current: dict[str, Any]) -> RiskFactor:
 
     score = _clamp_score(score)
     level = _level_from_score(score)
-    summary = "; ".join(reasons) if reasons else "Weather within normal range for production."
+    summary = (
+        "; ".join(reasons) if reasons else "Weather within normal range for production."
+    )
     mitigation = None
     if level in (RiskLevel.HIGH, RiskLevel.CRITICAL):
         mitigation = "Adjust shifts for extreme temps, ensure HVAC and PPE; plan for higher energy demand or heating needs."
@@ -182,7 +205,9 @@ def _port_and_route_risk(current: dict[str, Any]) -> RiskFactor:
 
     score = _clamp_score(score)
     level = _level_from_score(score)
-    summary = "; ".join(reasons) if reasons else "No significant port or route closure risk."
+    summary = (
+        "; ".join(reasons) if reasons else "No significant port or route closure risk."
+    )
     mitigation = None
     if level in (RiskLevel.HIGH, RiskLevel.CRITICAL):
         mitigation = "Check port/airport advisories; plan for 3–5 day backlog and alternative routing or modes."
@@ -232,10 +257,16 @@ def compute_risk(current_weather: dict[str, Any]) -> dict[str, Any]:
     scores = [f.score for f in factors]
     overall_score = min(100.0, (max(scores) * 0.5 + (sum(scores) / len(scores)) * 0.5))
     overall_level = _level_from_score(overall_score)
-    primary_concerns = [f.summary for f in factors if f.level in (RiskLevel.HIGH, RiskLevel.CRITICAL)]
+    primary_concerns = [
+        f.summary for f in factors if f.level in (RiskLevel.HIGH, RiskLevel.CRITICAL)
+    ]
     if not primary_concerns:
-        primary_concerns = ["No high or critical risks identified for current conditions."]
-    suggested_actions = list(dict.fromkeys([f.mitigation for f in factors if f.mitigation]))
+        primary_concerns = [
+            "No high or critical risks identified for current conditions."
+        ]
+    suggested_actions = list(
+        dict.fromkeys([f.mitigation for f in factors if f.mitigation])
+    )
 
     return {
         "overall_level": overall_level,

@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any
 
 
 class DataSourceResult:
@@ -46,5 +45,7 @@ class BaseDataSource(ABC):
     async def _on_initialize(self) -> None:
         pass
 
-    def _create_result(self, data: dict, metadata: dict | None = None) -> DataSourceResult:
+    def _create_result(
+        self, data: dict, metadata: dict | None = None
+    ) -> DataSourceResult:
         return DataSourceResult(self.get_type(), data, metadata)

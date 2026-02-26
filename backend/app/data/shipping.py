@@ -1,7 +1,7 @@
 import random
 from datetime import datetime, timedelta
 
-from app.services.data_sources.base import BaseDataSource, DataSourceResult
+from app.data.base import BaseDataSource, DataSourceResult
 
 
 class ShippingRoutesDataSource(BaseDataSource):

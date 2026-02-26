@@ -39,6 +39,7 @@ router = APIRouter(prefix="/trend-insights", tags=["trend-insights"])
 
 # ── Manual trigger ────────────────────────────────────────────────────
 
+
 @router.post("/run", response_model=TrendInsightRunResponse)
 async def run_trend_insights(
     oem: Oem = Depends(get_current_oem),
@@ -75,6 +76,7 @@ async def run_trend_insights(
 
 
 # ── Query insights ────────────────────────────────────────────────────
+
 
 @router.get("", response_model=list[TrendInsightResponse])
 def list_trend_insights(
@@ -125,6 +127,7 @@ def get_trend_insight(
 
 
 # ── Helper ────────────────────────────────────────────────────────────
+
 
 def _row_to_schema(row: TrendInsight) -> TrendInsightResponse:
     return TrendInsightResponse(

@@ -20,11 +20,7 @@ def _coerce_actions_to_strings(value):
         if isinstance(item, str):
             out.append(item.strip() or "—")
         elif isinstance(item, dict):
-            s = (
-                item.get("action")
-                or item.get("description")
-                or item.get("title")
-            )
+            s = item.get("action") or item.get("description") or item.get("title")
             if s is None and item:
                 s = next(iter(item.values()), "—")
             out.append(str(s).strip() if s else "—")
@@ -35,6 +31,7 @@ def _coerce_actions_to_strings(value):
 
 class ActionsArray(TypeDecorator):
     """ARRAY(Text) that coerces list-of-dicts from LLM to list of strings."""
+
     impl = ARRAY(Text)
     cache_ok = True
 

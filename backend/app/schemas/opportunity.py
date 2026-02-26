@@ -47,7 +47,9 @@ class OpportunityResponse(BaseModel):
     potentialBenefit: str | None = None
     estimatedValue: Decimal | None = None
     oemId: UUID | None = None
-    mitigation_plans: list[MitigationPlanRef] | None = Field(None, serialization_alias="mitigationPlans")
+    mitigation_plans: list[MitigationPlanRef] | None = Field(
+        None, serialization_alias="mitigationPlans"
+    )
     createdAt: datetime | None = None
     updatedAt: datetime | None = None
 

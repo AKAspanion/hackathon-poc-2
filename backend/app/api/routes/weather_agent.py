@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from app.agent.graph import run_weather_risk_agent
-from app.agent.shipment_agent import run_shipment_weather_agent
+from app.agents.legacy_weather import run_weather_risk_agent
+from app.agents.shipment_weather import run_shipment_weather_agent
 from app.config import settings
 from app.schemas.weather_agent import (
     HealthResponse,
@@ -89,7 +89,9 @@ async def get_weather_risk(city: str):
     )
 
 
-@router.post("/shipment/weather-exposure", response_model=ShipmentWeatherExposureResponse)
+@router.post(
+    "/shipment/weather-exposure", response_model=ShipmentWeatherExposureResponse
+)
 async def get_shipment_weather_exposure(body: ShipmentInput):
     """
     Analyse weather exposure for a shipment from Supplier to OEM.
@@ -106,4 +108,6 @@ async def get_shipment_weather_exposure(body: ShipmentInput):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Shipment weather agent failed: {e}")
+        raise HTTPException(
+            status_code=502, detail=f"Shipment weather agent failed: {e}"
+        )

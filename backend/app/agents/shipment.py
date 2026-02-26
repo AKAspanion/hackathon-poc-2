@@ -6,7 +6,6 @@ from typing import TypedDict, Any
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 
-from app.config import settings
 from app.services.agent_orchestrator import _extract_json
 from app.services.agent_types import OemScope
 from app.services.langchain_llm import get_chat_model
@@ -81,9 +80,7 @@ def _build_shipment_metadata_node(state: ShipmentAgentState) -> ShipmentAgentSta
                 {
                     "day": day,
                     "date": date_str,
-                    "estimated_location": str(
-                        entry.get("estimated_location") or ""
-                    ),
+                    "estimated_location": str(entry.get("estimated_location") or ""),
                     "milestone": str(entry.get("milestone") or "in_transit"),
                     "status": str(entry.get("status") or "moved"),
                 }
@@ -127,9 +124,9 @@ def _get_langchain_chain() -> Any | None:
                 (
                     "system",
                     (
-                "You are a Shipment Agent for a manufacturing supply chain. "
-                "You receive normalized shipment timelines and metrics and "
-                "must produce structured shipment risk pointers, focused on:\n"
+                        "You are a Shipment Agent for a manufacturing supply chain. "
+                        "You receive normalized shipment timelines and metrics and "
+                        "must produce structured shipment risk pointers, focused on:\n"
                         "- delay_risk (milestone vs actual delays)\n"
                         "- stagnation_risk (no movement for X days)\n"
                         "- velocity_risk (too slow/fast vs expected transit days)\n\n"
@@ -143,27 +140,27 @@ def _get_langchain_chain() -> Any | None:
                         "Metadata JSON:\n{shipment_metadata_json}\n\n"
                         "Return JSON of shape:\n"
                         "{{\n"
-                        '  \"risks\": [\n'
+                        '  "risks": [\n'
                         "    {{\n"
-                        '      \"title\": str,\n'
-                        '      \"description\": str,\n'
-                        '      \"severity\": '
-                        '\"low\" | \"medium\" | \"high\" | \"critical\",\n'
-                        '      \"affectedRegion\": str | null,\n'
-                        '      \"affectedSupplier\": str | null,\n'
-                        '      \"estimatedImpact\": str | null,\n'
-                        '      \"estimatedCost\": number | null,\n'
-                        '      \"route\": str,\n'
-                        '      \"delay_risk\": {{ \"score\": number, '
-                        '\"label\": \"low|medium|high|critical\" }},\n'
-                        '      \"stagnation_risk\": {{ \"score\": number, '
-                        '\"label\": \"low|medium|high|critical\" }},\n'
-                        '      \"velocity_risk\": {{ \"score\": number, '
-                        '\"label\": \"low|medium|high|critical\" }}\n'
+                        '      "title": str,\n'
+                        '      "description": str,\n'
+                        '      "severity": '
+                        '"low" | "medium" | "high" | "critical",\n'
+                        '      "affectedRegion": str | null,\n'
+                        '      "affectedSupplier": str | null,\n'
+                        '      "estimatedImpact": str | null,\n'
+                        '      "estimatedCost": number | null,\n'
+                        '      "route": str,\n'
+                        '      "delay_risk": {{ "score": number, '
+                        '"label": "low|medium|high|critical" }},\n'
+                        '      "stagnation_risk": {{ "score": number, '
+                        '"label": "low|medium|high|critical" }},\n'
+                        '      "velocity_risk": {{ "score": number, '
+                        '"label": "low|medium|high|critical" }}\n'
                         "    }}\n"
                         "  ]\n"
                         "}}\n"
-                        "If no risks, return {{\"risks\": []}}."
+                        'If no risks, return {{"risks": []}}.'
                     ),
                 ),
             ]
@@ -328,9 +325,7 @@ async def _shipment_risk_llm_node(state: ShipmentAgentState) -> ShipmentAgentSta
     chain = _get_langchain_chain()
     if not chain:
         return {
-            "shipping_risks": _heuristic_shipping_risks_from_metadata(
-                metadata_list
-            )
+            "shipping_risks": _heuristic_shipping_risks_from_metadata(metadata_list)
         }
 
     try:
@@ -366,9 +361,7 @@ async def _shipment_risk_llm_node(state: ShipmentAgentState) -> ShipmentAgentSta
     except Exception as exc:
         logger.exception("ShipmentAgent LLM error: %s", exc)
         return {
-            "shipping_risks": _heuristic_shipping_risks_from_metadata(
-                metadata_list
-            )
+            "shipping_risks": _heuristic_shipping_risks_from_metadata(metadata_list)
         }
 
 
@@ -426,9 +419,7 @@ async def run_shipment_agent_graph(
         # Ensure shipping risks are associated with concrete suppliers by
         # inferring affected suppliers from the route/metadata and OEM scope,
         # and merging with any supplier labels that may already be present.
-        existing_suppliers = _normalize_supplier_labels(
-            risk.get("affectedSupplier")
-        )
+        existing_suppliers = _normalize_supplier_labels(risk.get("affectedSupplier"))
         inferred_suppliers = _infer_suppliers_for_route(scope, meta)
 
         all_suppliers: list[str] = []
@@ -457,4 +448,3 @@ async def run_shipment_agent_graph(
         risks_for_db.append(db_risk)
 
     return {"risks": risks_for_db}
-

@@ -1,7 +1,5 @@
 """Shipment linked to a shipping supplier (AWB, dates, status)."""
 
-from datetime import datetime
-
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 

@@ -22,7 +22,9 @@ from app.services.shipping_suppliers_crud import (
 router = APIRouter(prefix="/shipping/suppliers", tags=["shipping"])
 
 
-@router.post("/", response_model=ShippingSupplierOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=ShippingSupplierOut, status_code=status.HTTP_201_CREATED
+)
 def create(
     data: ShippingSupplierCreate,
     db: Session = Depends(get_db),

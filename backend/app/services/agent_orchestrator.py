@@ -155,7 +155,9 @@ def _get_llm_invoke():
             _invoke_fn = _wrap_llm_invoke(_anthropic_invoke, "anthropic", model)
             logger.info("LLM provider initialized: Anthropic model=%s", model)
         else:
-            logger.error("ANTHROPIC_API_KEY not set and provider is anthropic; no LLM will be used.")
+            logger.error(
+                "ANTHROPIC_API_KEY not set and provider is anthropic; no LLM will be used."
+            )
             _invoke_fn = None
     return _invoke_fn
 
@@ -246,8 +248,7 @@ def _normalize_analysis(parsed: dict | None) -> dict:
 
     if dropped_risks or dropped_opps:
         logger.info(
-            "normalize_analysis: dropped malformed items "
-            "(risks=%d, opportunities=%d)",
+            "normalize_analysis: dropped malformed items (risks=%d, opportunities=%d)",
             dropped_risks,
             dropped_opps,
         )
@@ -335,9 +336,7 @@ async def analyze_global_risk(news_data: dict[str, list]) -> dict[str, list]:
     for source_type, data_array in news_data.items():
         for data_item in data_array:
             payload = (
-                data_item.get("data")
-                if isinstance(data_item, dict)
-                else data_item
+                data_item.get("data") if isinstance(data_item, dict) else data_item
             )
             if not payload:
                 payload = data_item
@@ -378,9 +377,7 @@ async def analyze_shipping_disruptions(route_data: dict[str, list]) -> dict[str,
     for source_type, data_array in route_data.items():
         for data_item in data_array:
             payload = (
-                data_item.get("data")
-                if isinstance(data_item, dict)
-                else data_item
+                data_item.get("data") if isinstance(data_item, dict) else data_item
             )
             if not payload:
                 payload = data_item
@@ -454,10 +451,10 @@ def _build_analysis_prompt(
     scope_ctx = ""
     if scope:
         scope_ctx = f"""
-You are analyzing data for OEM: "{scope['oemName']}".
-Relevant suppliers: {', '.join(scope.get('supplierNames') or ['None'])}.
-Relevant locations: {', '.join((scope.get('cities') or []) + (scope.get('regions') or []) + (scope.get('countries') or [])) or 'None'}.
-Relevant commodities: {', '.join(scope.get('commodities') or ['None'])}.
+You are analyzing data for OEM: "{scope["oemName"]}".
+Relevant suppliers: {", ".join(scope.get("supplierNames") or ["None"])}.
+Relevant locations: {", ".join((scope.get("cities") or []) + (scope.get("regions") or []) + (scope.get("countries") or [])) or "None"}.
+Relevant commodities: {", ".join(scope.get("commodities") or ["None"])}.
 Only report risks and opportunities relevant to this OEM's supply chain.
 """
     return f"""You are a supply chain risk intelligence agent. Analyze the following {source_type} data and identify:
@@ -521,7 +518,7 @@ def _build_global_risk_prompt(data_item: dict) -> str:
     batch_note = ""
     if isinstance(data_item, dict) and "items" in data_item:
         batch_note = (
-            "The data below contains multiple news items (an \"items\" array). "
+            'The data below contains multiple news items (an "items" array). '
             "Assess all of them and return risks for any that indicate "
             "material global supply chain risk.\n\n"
         )
@@ -564,11 +561,11 @@ async def generate_mitigation_plan(risk: dict) -> dict:
         return {}
     try:
         prompt = f"""Generate a detailed mitigation plan for this supply chain risk:
-Title: {risk.get('title')}
-Description: {risk.get('description')}
-Severity: {risk.get('severity')}
-Affected Region: {risk.get('affectedRegion') or 'N/A'}
-Affected Supplier: {risk.get('affectedSupplier') or 'N/A'}
+Title: {risk.get("title")}
+Description: {risk.get("description")}
+Severity: {risk.get("severity")}
+Affected Region: {risk.get("affectedRegion") or "N/A"}
+Affected Supplier: {risk.get("affectedSupplier") or "N/A"}
 
 Return ONLY a valid JSON object:
 {{ "title": "...", "description": "...", "actions": ["Action 1", "Action 2"], "metadata": {{}}, "assignedTo": "...", "dueDate": "YYYY-MM-DD" }}"""
@@ -632,10 +629,10 @@ async def generate_opportunity_plan(opportunity: dict) -> dict:
         return {}
     try:
         prompt = f"""Generate an action plan to capitalize on this supply chain opportunity:
-Title: {opportunity.get('title')}
-Description: {opportunity.get('description')}
-Type: {opportunity.get('type')}
-Potential Benefit: {opportunity.get('potentialBenefit') or 'N/A'}
+Title: {opportunity.get("title")}
+Description: {opportunity.get("description")}
+Type: {opportunity.get("type")}
+Potential Benefit: {opportunity.get("potentialBenefit") or "N/A"}
 
 Return ONLY a valid JSON object:
 {{ "title": "...", "description": "...", "actions": ["Action 1", "Action 2"], "metadata": {{}}, "assignedTo": "...", "dueDate": "YYYY-MM-DD" }}"""

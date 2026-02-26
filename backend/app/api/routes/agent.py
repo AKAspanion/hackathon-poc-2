@@ -6,13 +6,12 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.api.deps import get_current_oem
 from app.models.oem import Oem
-from app.services.agent_service import (
+from app.orchestration.agent_service import (
     get_status,
     get_latest_risk_score,
     trigger_manual_analysis_sync,
     _ensure_agent_status,
 )
-from app.models.agent_status import AgentStatusEntity
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -70,7 +69,10 @@ def risk_score(
     oid = oemId or oem.id
     score = get_latest_risk_score(db, oid)
     if not score:
-        return {"message": "No risk score computed yet for this OEM.", "overallScore": None}
+        return {
+            "message": "No risk score computed yet for this OEM.",
+            "overallScore": None,
+        }
     return {
         "id": str(score.id),
         "oemId": str(score.oemId),

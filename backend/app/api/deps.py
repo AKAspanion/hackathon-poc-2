@@ -3,7 +3,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyCookie
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
@@ -22,7 +22,9 @@ def create_access_token(oem_id: UUID, email: str) -> str:
 
 def decode_token(token: str) -> dict:
     try:
-        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        payload = jwt.decode(
+            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+        )
         return payload
     except JWTError:
         raise HTTPException(
@@ -48,6 +50,7 @@ async def get_current_oem(
             detail="Invalid or missing token",
         )
     from app.services.oems import get_oem_by_id
+
     oem = get_oem_by_id(db, UUID(oem_id))
     if not oem:
         raise HTTPException(

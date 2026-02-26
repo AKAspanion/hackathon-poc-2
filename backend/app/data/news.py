@@ -1,5 +1,5 @@
 import logging
-from app.services.data_sources.base import BaseDataSource, DataSourceResult
+from app.data.base import BaseDataSource, DataSourceResult
 from app.services.external_api_cache import cached_get
 from app.config import settings
 import httpx
@@ -11,9 +11,7 @@ BASE_URL = "https://newsapi.org/v2"
 class NewsDataSource(BaseDataSource):
     def __init__(self, config: dict | None = None):
         super().__init__(config)
-        self._api_key = (
-            (config or {}).get("apiKey") or settings.news_api_key or ""
-        )
+        self._api_key = (config or {}).get("apiKey") or settings.news_api_key or ""
         if not self._api_key:
             logger.warning("News API key not configured. Using mock data.")
 
@@ -52,16 +50,22 @@ class NewsDataSource(BaseDataSource):
                         )
                         if r.status_code == 200:
                             data = r.json()
-                            for article in (data.get("articles") or []):
-                                results.append(self._create_result({
-                                    "title": article.get("title"),
-                                    "description": article.get("description"),
-                                    "url": article.get("url"),
-                                    "source": (article.get("source") or {}).get("name"),
-                                    "publishedAt": article.get("publishedAt"),
-                                    "author": article.get("author"),
-                                    "content": article.get("content"),
-                                }))
+                            for article in data.get("articles") or []:
+                                results.append(
+                                    self._create_result(
+                                        {
+                                            "title": article.get("title"),
+                                            "description": article.get("description"),
+                                            "url": article.get("url"),
+                                            "source": (article.get("source") or {}).get(
+                                                "name"
+                                            ),
+                                            "publishedAt": article.get("publishedAt"),
+                                            "author": article.get("author"),
+                                            "content": article.get("content"),
+                                        }
+                                    )
+                                )
             except Exception as e:
                 logger.exception("Error fetching news: %s", e)
         if not results:
@@ -72,16 +76,14 @@ class NewsDataSource(BaseDataSource):
                         "Major shipping routes affected by weather conditions"
                     ),
                     "source": "Supply Chain News",
-                    "publishedAt": __import__("datetime").datetime.utcnow()
-                    .isoformat()
+                    "publishedAt": __import__("datetime").datetime.utcnow().isoformat()
                     + "Z",
                 },
                 {
                     "title": "Manufacturing Plant Closure Announced",
                     "description": "Factory shutdown due to supplier issues",
                     "source": "Manufacturing Today",
-                    "publishedAt": __import__("datetime").datetime.utcnow()
-                    .isoformat()
+                    "publishedAt": __import__("datetime").datetime.utcnow().isoformat()
                     + "Z",
                 },
             ]:

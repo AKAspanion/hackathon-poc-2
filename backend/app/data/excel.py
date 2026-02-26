@@ -11,8 +11,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# backend/app/data/excel.py -> parents[2] = backend
 DEFAULT_EXCEL_PATH = str(
-    Path(__file__).resolve().parents[3] / "data" / "mock_suppliers_demo.xlsx"
+    Path(__file__).resolve().parents[2] / "data" / "mock_suppliers_demo.xlsx"
 )
 
 # ── Column name normalisers ───────────────────────────────────────────
@@ -41,10 +42,15 @@ def _read_sheet(wb, sheet_name: str, required_cols: set[str]) -> list[dict]:
             f"Sheet '{sheet_name}' is missing required columns: {missing}. "
             f"Found columns: {headers}"
         )
-    return [_row_to_dict(headers, row) for row in rows[1:] if any(v is not None for v in row)]
+    return [
+        _row_to_dict(headers, row)
+        for row in rows[1:]
+        if any(v is not None for v in row)
+    ]
 
 
 # ── Public loaders ────────────────────────────────────────────────────
+
 
 def load_suppliers_from_excel(path: str | None = None) -> list[dict]:
     """Return a list of supplier dicts from the Suppliers sheet."""
@@ -82,7 +88,9 @@ def load_global_context_from_excel(path: str | None = None) -> list[dict]:
 
     path = path or DEFAULT_EXCEL_PATH
     if not os.path.exists(path):
-        logger.warning("Excel file not found at %s – returning empty global context.", path)
+        logger.warning(
+            "Excel file not found at %s – returning empty global context.", path
+        )
         return []
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     rows = _read_sheet(wb, "Global", _GLOBAL_REQUIRED)
@@ -106,6 +114,8 @@ def load_all_from_excel(path: str | None = None) -> dict[str, list[dict]]:
     wb.close()
     logger.info(
         "Loaded from Excel: %d suppliers, %d materials, %d global rows",
-        len(suppliers), len(materials), len(global_ctx),
+        len(suppliers),
+        len(materials),
+        len(global_ctx),
     )
     return {"suppliers": suppliers, "materials": materials, "global": global_ctx}

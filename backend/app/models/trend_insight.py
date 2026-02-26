@@ -12,18 +12,22 @@ class TrendInsight(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     # Scope metadata
-    scope = Column(String, nullable=False)           # material | supplier | global
-    entity_name = Column(String, nullable=True)      # supplier name, material name, or "Global"
-    risk_opportunity = Column(String, nullable=False, default="risk")  # risk | opportunity
+    scope = Column(String, nullable=False)  # material | supplier | global
+    entity_name = Column(
+        String, nullable=True
+    )  # supplier name, material name, or "Global"
+    risk_opportunity = Column(
+        String, nullable=False, default="risk"
+    )  # risk | opportunity
 
     # Insight content
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     predicted_impact = Column(Text, nullable=True)
-    time_horizon = Column(String, nullable=True)     # short-term | medium-term | long-term
-    severity = Column(String, nullable=True)         # low | medium | high | critical
-    recommended_actions = Column(JSONB, nullable=True)   # list[str]
-    source_articles = Column(JSONB, nullable=True)       # list[str]
+    time_horizon = Column(String, nullable=True)  # short-term | medium-term | long-term
+    severity = Column(String, nullable=True)  # low | medium | high | critical
+    recommended_actions = Column(JSONB, nullable=True)  # list[str]
+    source_articles = Column(JSONB, nullable=True)  # list[str]
     confidence = Column(Float, nullable=True)
 
     # Run provenance

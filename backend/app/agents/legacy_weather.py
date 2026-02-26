@@ -4,7 +4,13 @@ import asyncio
 import logging
 from typing import Annotated, Any, Literal, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_core.tools import tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -123,7 +129,9 @@ def _should_continue(state: AgentState) -> Literal["tools", "fallback_tools", "e
         return "tools"
     city = (state.get("city") or "").strip()
     key = city or None
-    if key and (state.get("weather_data") is not None and state.get("risk_dict") is not None):
+    if key and (
+        state.get("weather_data") is not None and state.get("risk_dict") is not None
+    ):
         return "end"
     if key and not last.tool_calls:
         return "fallback_tools"
@@ -186,7 +194,11 @@ def _build_graph() -> StateGraph:
     builder.add_node("fallback_tools", _fallback_tools_node)
 
     builder.add_edge(START, "agent")
-    builder.add_conditional_edges("agent", _should_continue, {"tools": "tools", "fallback_tools": "fallback_tools", "end": END})
+    builder.add_conditional_edges(
+        "agent",
+        _should_continue,
+        {"tools": "tools", "fallback_tools": "fallback_tools", "end": END},
+    )
     builder.add_edge("tools", "agent")
     builder.add_edge("fallback_tools", "agent")
     return builder
@@ -202,7 +214,9 @@ def _get_graph():
     return _graph
 
 
-def _build_summary_prompt(weather_data: dict[str, Any], risk_dict: dict[str, Any]) -> str:
+def _build_summary_prompt(
+    weather_data: dict[str, Any], risk_dict: dict[str, Any]
+) -> str:
     loc = (weather_data or {}).get("location") or {}
     current = (weather_data or {}).get("current") or {}
     factors = risk_dict.get("factors") or []
@@ -210,11 +224,11 @@ def _build_summary_prompt(weather_data: dict[str, Any], risk_dict: dict[str, Any
         f"- {f.get('factor', '')}: {f.get('level', '')} (score {f.get('score', 0)}): {f.get('summary', '')}"
         for f in factors
     )
-    return f"""Location: {loc.get('name', 'Unknown')} ({loc.get('region', '')}, {loc.get('country', '')})
-Current weather: {(current.get('condition') or {}).get('text', 'Unknown')}, temp {current.get('temp_c')}°C, wind {current.get('wind_kph')} km/h.
-Overall risk: {risk_dict.get('overall_level', 'unknown')} (score {risk_dict.get('overall_score', 0)}/100).
-Primary concerns: {chr(10).join(risk_dict.get('primary_concerns') or [])}
-Suggested actions: {chr(10).join(risk_dict.get('suggested_actions') or [])}
+    return f"""Location: {loc.get("name", "Unknown")} ({loc.get("region", "")}, {loc.get("country", "")})
+Current weather: {(current.get("condition") or {}).get("text", "Unknown")}, temp {current.get("temp_c")}°C, wind {current.get("wind_kph")} km/h.
+Overall risk: {risk_dict.get("overall_level", "unknown")} (score {risk_dict.get("overall_score", 0)}/100).
+Primary concerns: {chr(10).join(risk_dict.get("primary_concerns") or [])}
+Suggested actions: {chr(10).join(risk_dict.get("suggested_actions") or [])}
 Risk factors:
 {factors_text}
 Write a short executive summary (2-4 sentences) for a manufacturing operations manager: main weather-driven risks and top 2-3 mitigation actions. Be concise and actionable."""
@@ -234,7 +248,9 @@ async def run_weather_risk_agent(city: str) -> dict[str, Any]:
     initial: AgentState = {
         "messages": [
             SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=f"Assess supply chain weather risk for city {city}. Use your tools to get weather and risk, then provide your executive summary."),
+            HumanMessage(
+                content=f"Assess supply chain weather risk for city {city}. Use your tools to get weather and risk, then provide your executive summary."
+            ),
         ],
         "city": city,
     }
@@ -259,10 +275,19 @@ async def run_weather_risk_agent(city: str) -> dict[str, Any]:
 
     if not llm_summary and weather_data and risk_dict:
         try:
-            llm = ChatOllama(base_url=settings.ollama_base_url, model=settings.ollama_model, temperature=0.3, num_predict=400)
+            llm = ChatOllama(
+                base_url=settings.ollama_base_url,
+                model=settings.ollama_model,
+                temperature=0.3,
+                num_predict=400,
+            )
             prompt = _build_summary_prompt(weather_data, risk_dict)
             response = await llm.ainvoke([HumanMessage(content=prompt)])
-            llm_summary = (response.content if hasattr(response, "content") else str(response) or "").strip() or None
+            llm_summary = (
+                response.content
+                if hasattr(response, "content")
+                else str(response) or ""
+            ).strip() or None
         except Exception as e:
             logger.warning("Ollama summary fallback failed: %s", e)
 

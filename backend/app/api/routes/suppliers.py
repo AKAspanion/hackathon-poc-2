@@ -23,7 +23,9 @@ def upload(
     oem: Oem = Depends(get_current_oem),
 ):
     if not file.file:
-        raise HTTPException(status_code=400, detail='No file uploaded. Use form field name "file".')
+        raise HTTPException(
+            status_code=400, detail='No file uploaded. Use form field name "file".'
+        )
     content = file.file.read()
     return upload_csv(db, oem.id, content, file.filename or "upload.csv")
 

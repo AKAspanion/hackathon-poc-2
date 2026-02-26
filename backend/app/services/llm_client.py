@@ -23,7 +23,6 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
 
 from app.config import settings
 
@@ -34,13 +33,14 @@ _LLM_LOG_MAX_CHARS = 4000
 
 # ── Data classes ──────────────────────────────────────────────────────
 
+
 @dataclass
 class TrendItem:
     title: str
     summary: str
     source: str
     published_at: str
-    level: str          # "material" | "supplier" | "global"
+    level: str  # "material" | "supplier" | "global"
     query: str
     url: str | None = None
     relevance_score: float = 0.7
@@ -49,6 +49,7 @@ class TrendItem:
 @dataclass
 class TrendContext:
     """Aggregated context passed to the LLM for insight generation."""
+
     oem_name: str = ""
     excel_path: str | None = None
     suppliers: list[dict] = field(default_factory=list)
@@ -59,14 +60,14 @@ class TrendContext:
 
 @dataclass
 class Insight:
-    scope: str                    # "material" | "supplier" | "global"
-    entity_name: str              # material or supplier name, or "Global"
-    risk_opportunity: str         # "risk" | "opportunity"
+    scope: str  # "material" | "supplier" | "global"
+    entity_name: str  # material or supplier name, or "Global"
+    risk_opportunity: str  # "risk" | "opportunity"
     title: str
     description: str
     predicted_impact: str
-    time_horizon: str             # "short-term" | "medium-term" | "long-term"
-    severity: str                 # "low" | "medium" | "high" | "critical"
+    time_horizon: str  # "short-term" | "medium-term" | "long-term"
+    severity: str  # "low" | "medium" | "high" | "critical"
     recommended_actions: list[str] = field(default_factory=list)
     confidence: float = 0.7
     source_articles: list[str] = field(default_factory=list)
@@ -89,6 +90,7 @@ class Insight:
 
 # ── LLM adapter base ──────────────────────────────────────────────────
 
+
 class BaseLLMAdapter:
     provider: str = "base"
     model: str = "unknown"
@@ -101,7 +103,10 @@ class BaseLLMAdapter:
         start = time.perf_counter()
         logger.info(
             "LLM request id=%s provider=%s model=%s prompt_len=%d",
-            call_id, self.provider, self.model, len(prompt),
+            call_id,
+            self.provider,
+            self.model,
+            len(prompt),
         )
         try:
             response = await self._raw_invoke(prompt)
@@ -109,27 +114,50 @@ class BaseLLMAdapter:
             elapsed = int((time.perf_counter() - start) * 1000)
             logger.exception(
                 "LLM error id=%s provider=%s model=%s elapsed_ms=%d",
-                call_id, self.provider, self.model, elapsed,
+                call_id,
+                self.provider,
+                self.model,
+                elapsed,
             )
-            _persist_llm_log(call_id, self.provider, self.model, prompt, None,
-                             "error", elapsed, str(exc))
+            _persist_llm_log(
+                call_id,
+                self.provider,
+                self.model,
+                prompt,
+                None,
+                "error",
+                elapsed,
+                str(exc),
+            )
             raise
         elapsed = int((time.perf_counter() - start) * 1000)
         logger.info(
             "LLM response id=%s provider=%s elapsed_ms=%d response_len=%d",
-            call_id, self.provider, elapsed, len(response),
+            call_id,
+            self.provider,
+            elapsed,
+            len(response),
         )
-        _persist_llm_log(call_id, self.provider, self.model, prompt, response,
-                         "success", elapsed, None)
+        _persist_llm_log(
+            call_id,
+            self.provider,
+            self.model,
+            prompt,
+            response,
+            "success",
+            elapsed,
+            None,
+        )
         return response
 
     async def generate_insights(self, ctx: TrendContext) -> list[Insight]:
         """Run three focused LLM calls concurrently — one per scope — and merge results."""
         material_ctx = _ScopedContext("material", ctx)
         supplier_ctx = _ScopedContext("supplier", ctx)
-        global_ctx   = _ScopedContext("global",   ctx)
+        global_ctx = _ScopedContext("global", ctx)
 
         import asyncio
+
         results = await asyncio.gather(
             self._invoke_scope(material_ctx),
             self._invoke_scope(supplier_ctx),
@@ -141,7 +169,11 @@ class BaseLLMAdapter:
         scopes = ("material", "supplier", "global")
         for scope, result in zip(scopes, results):
             if isinstance(result, BaseException):
-                logger.warning("Scope '%s' call failed: %s – using mock for that scope", scope, result)
+                logger.warning(
+                    "Scope '%s' call failed: %s – using mock for that scope",
+                    scope,
+                    result,
+                )
                 insights.extend(_mock_insights_for_scope(scope, ctx))
             else:
                 insights.extend(result)
@@ -164,11 +196,13 @@ class BaseLLMAdapter:
 
 # ── Anthropic adapter ─────────────────────────────────────────────────
 
+
 class AnthropicAdapter(BaseLLMAdapter):
     provider = "anthropic"
 
     def __init__(self):
         from anthropic import AsyncAnthropic
+
         self.model = settings.anthropic_model or "claude-3-5-sonnet-20241022"
         self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
@@ -183,11 +217,13 @@ class AnthropicAdapter(BaseLLMAdapter):
 
 # ── OpenAI adapter ────────────────────────────────────────────────────
 
+
 class OpenAIAdapter(BaseLLMAdapter):
     provider = "openai"
 
     def __init__(self):
         from openai import AsyncOpenAI
+
         self.model = settings.openai_model or "gpt-4o-mini"
         kwargs: dict = {"api_key": settings.openai_api_key}
         if settings.openai_base_url:
@@ -206,16 +242,21 @@ class OpenAIAdapter(BaseLLMAdapter):
 
 # ── Ollama adapter ────────────────────────────────────────────────────
 
+
 class OllamaAdapter(BaseLLMAdapter):
     provider = "ollama"
 
     def __init__(self):
         import httpx as _httpx  # noqa: F401 – just verify it's importable
+
         self.model = settings.ollama_model or "llama3"
-        self._base_url = (settings.ollama_base_url or "http://localhost:11434").rstrip("/")
+        self._base_url = (settings.ollama_base_url or "http://localhost:11434").rstrip(
+            "/"
+        )
 
     async def _raw_invoke(self, prompt: str) -> str:
         import httpx
+
         async with httpx.AsyncClient() as client:
             r = await client.post(
                 f"{self._base_url}/api/generate",
@@ -229,6 +270,7 @@ class OllamaAdapter(BaseLLMAdapter):
 
 # ── Mock adapter (no credentials) ────────────────────────────────────
 
+
 class MockAdapter(BaseLLMAdapter):
     provider = "mock"
     model = "mock"
@@ -237,7 +279,9 @@ class MockAdapter(BaseLLMAdapter):
         return ""
 
     async def generate_insights(self, ctx: TrendContext) -> list[Insight]:
-        logger.info("MockAdapter: returning rule-based insights (no LLM key configured).")
+        logger.info(
+            "MockAdapter: returning rule-based insights (no LLM key configured)."
+        )
         return _mock_insights(ctx)
 
 
@@ -257,7 +301,11 @@ def get_llm_client() -> BaseLLMAdapter:
         logger.info("LLM client: OpenAI model=%s", settings.openai_model)
         _cached_client = OpenAIAdapter()
     elif provider == "ollama":
-        logger.info("LLM client: Ollama model=%s base=%s", settings.ollama_model, settings.ollama_base_url)
+        logger.info(
+            "LLM client: Ollama model=%s base=%s",
+            settings.ollama_model,
+            settings.ollama_base_url,
+        )
         _cached_client = OllamaAdapter()
     elif settings.anthropic_api_key:
         logger.info("LLM client: Anthropic model=%s", settings.anthropic_model)
@@ -280,19 +328,21 @@ def reset_llm_client() -> None:
 
 # ── Scoped context (one per parallel call) ────────────────────────────
 
+
 @dataclass
 class _ScopedContext:
-    scope: str          # "material" | "supplier" | "global"
+    scope: str  # "material" | "supplier" | "global"
     ctx: TrendContext
 
 
 # ── Per-scope prompt builders ─────────────────────────────────────────
 
+
 def _fmt_trend_items(items: list[TrendItem], limit: int = 6) -> str:
     if not items:
         return "  (none)"
     return "\n".join(
-        f"  [{i+1}] {it.title} | {it.source} | {it.published_at[:10]}\n"
+        f"  [{i + 1}] {it.title} | {it.source} | {it.published_at[:10]}\n"
         f"       {it.summary[:200]}"
         for i, it in enumerate(items[:limit])
     )
@@ -304,24 +354,28 @@ def _build_scope_prompt(scoped: _ScopedContext) -> str:
 
     oem = ctx.oem_name or "Unnamed Manufacturer"
     supplier_names = ", ".join(s.get("name", "") for s in ctx.suppliers[:10]) or "N/A"
-    material_names = ", ".join(m.get("material_name", "") for m in ctx.materials[:10]) or "N/A"
-    global_rows    = "; ".join(g.get("macro_trend", "") for g in ctx.global_context[:5]) or "N/A"
+    material_names = (
+        ", ".join(m.get("material_name", "") for m in ctx.materials[:10]) or "N/A"
+    )
+    global_rows = (
+        "; ".join(g.get("macro_trend", "") for g in ctx.global_context[:5]) or "N/A"
+    )
 
     trend_items = [t for t in ctx.trend_items if t.level == scope]
-    news_block  = _fmt_trend_items(trend_items)
+    news_block = _fmt_trend_items(trend_items)
 
     if scope == "material":
-        entities   = material_names
+        entities = material_names
         focus_line = "Focus exclusively on MATERIAL-level risks and opportunities (prices, shortages, substitutes, lead times)."
-        count      = "3-4"
+        count = "3-4"
     elif scope == "supplier":
-        entities   = supplier_names
+        entities = supplier_names
         focus_line = "Focus exclusively on SUPPLIER-level risks and opportunities (delivery reliability, geopolitics, capacity, financial health)."
-        count      = "3-4"
+        count = "3-4"
     else:
-        entities   = global_rows
+        entities = global_rows
         focus_line = "Focus exclusively on GLOBAL macro-level risks and opportunities (trade policy, freight, regulation, climate, geopolitics)."
-        count      = "2-3"
+        count = "2-3"
 
     return f"""You are a predictive supply chain intelligence agent for a manufacturer.
 
@@ -359,6 +413,7 @@ No prose, no markdown fences. JSON array only."""
 
 # ── Response parser ───────────────────────────────────────────────────
 
+
 def _extract_json_array(text: str) -> list | None:
     m = re.search(r"\[[\s\S]*\]", text)
     if m:
@@ -372,32 +427,37 @@ def _extract_json_array(text: str) -> list | None:
 def _parse_insights(raw: str) -> list[Insight]:
     data = _extract_json_array(raw)
     if not data or not isinstance(data, list):
-        logger.warning("Could not parse insights from LLM response; falling back to mock.")
+        logger.warning(
+            "Could not parse insights from LLM response; falling back to mock."
+        )
         return []
     insights = []
     for item in data:
         if not isinstance(item, dict):
             continue
         try:
-            insights.append(Insight(
-                scope=item.get("scope", "global"),
-                entity_name=item.get("entity_name", "Unknown"),
-                risk_opportunity=item.get("risk_opportunity", "risk"),
-                title=item.get("title", "Untitled"),
-                description=item.get("description", ""),
-                predicted_impact=item.get("predicted_impact", ""),
-                time_horizon=item.get("time_horizon", "medium-term"),
-                severity=item.get("severity", "medium"),
-                recommended_actions=item.get("recommended_actions") or [],
-                confidence=float(item.get("confidence", 0.7)),
-                source_articles=item.get("source_articles") or [],
-            ))
+            insights.append(
+                Insight(
+                    scope=item.get("scope", "global"),
+                    entity_name=item.get("entity_name", "Unknown"),
+                    risk_opportunity=item.get("risk_opportunity", "risk"),
+                    title=item.get("title", "Untitled"),
+                    description=item.get("description", ""),
+                    predicted_impact=item.get("predicted_impact", ""),
+                    time_horizon=item.get("time_horizon", "medium-term"),
+                    severity=item.get("severity", "medium"),
+                    recommended_actions=item.get("recommended_actions") or [],
+                    confidence=float(item.get("confidence", 0.7)),
+                    source_articles=item.get("source_articles") or [],
+                )
+            )
         except Exception as exc:
             logger.warning("Skipping malformed insight item: %s", exc)
     return insights
 
 
 # ── Rule-based mock insights ──────────────────────────────────────────
+
 
 def _mock_insights_for_scope(scope: str, ctx: TrendContext) -> list[Insight]:
     """Return only the mock insights for a single scope."""
@@ -412,86 +472,99 @@ def _mock_insights(ctx: TrendContext) -> list[Insight]:
         name = m.get("material_name", "material")
         criticality = m.get("criticality", "medium")
         volatility = m.get("price_volatility", "medium")
-        insights.append(Insight(
-            scope="material",
-            entity_name=name.title(),
-            risk_opportunity="risk",
-            title=f"{name.title()} supply constraint risk",
-            description=(
-                f"{name.title()} is classified as {criticality}-criticality with {volatility} "
-                f"price volatility. Current market signals indicate potential supply tightening "
-                f"driven by geopolitical and demand-side pressures."
-            ),
-            predicted_impact=f"10–20% cost increase and {m.get('avg_lead_time_days', 30)}+ day lead-time extension.",
-            time_horizon="short-term",
-            severity="high" if criticality in ("critical", "high") else "medium",
-            recommended_actions=[
-                f"Increase safety stock for {name} by 30-45 days.",
-                "Qualify at least one alternative supplier within 90 days.",
-                "Issue formal supplier risk questionnaire to current source.",
-                "Review purchase contracts for force-majeure and price-cap clauses.",
-            ],
-            confidence=0.72,
-            source_articles=[t.title for t in ctx.trend_items if name.lower() in t.query.lower()][:3],
-        ))
+        insights.append(
+            Insight(
+                scope="material",
+                entity_name=name.title(),
+                risk_opportunity="risk",
+                title=f"{name.title()} supply constraint risk",
+                description=(
+                    f"{name.title()} is classified as {criticality}-criticality with {volatility} "
+                    f"price volatility. Current market signals indicate potential supply tightening "
+                    f"driven by geopolitical and demand-side pressures."
+                ),
+                predicted_impact=f"10–20% cost increase and {m.get('avg_lead_time_days', 30)}+ day lead-time extension.",
+                time_horizon="short-term",
+                severity="high" if criticality in ("critical", "high") else "medium",
+                recommended_actions=[
+                    f"Increase safety stock for {name} by 30-45 days.",
+                    "Qualify at least one alternative supplier within 90 days.",
+                    "Issue formal supplier risk questionnaire to current source.",
+                    "Review purchase contracts for force-majeure and price-cap clauses.",
+                ],
+                confidence=0.72,
+                source_articles=[
+                    t.title for t in ctx.trend_items if name.lower() in t.query.lower()
+                ][:3],
+            )
+        )
 
     for s in ctx.suppliers[:3]:
         name = s.get("name", "supplier")
         region = s.get("region", "")
         risk = s.get("risk_score", 50)
-        insights.append(Insight(
-            scope="supplier",
-            entity_name=name,
-            risk_opportunity="risk" if int(risk or 50) > 60 else "opportunity",
-            title=f"Supply continuity assessment: {name}",
-            description=(
-                f"{name} (region: {region}) carries a risk score of {risk}. "
-                f"Recent news signals point to operational or geopolitical pressures "
-                f"affecting delivery reliability from this supplier."
-            ),
-            predicted_impact=f"Delivery delays of 2–4 weeks and potential cost uplift of 5–15%.",
-            time_horizon="short-term",
-            severity="high" if int(risk or 50) >= 70 else "medium",
-            recommended_actions=[
-                f"Schedule business continuity review call with {name}.",
-                "Increase on-hand inventory buffer to 8 weeks.",
-                "Identify and onboard secondary supplier in alternate region.",
-                "Insert escalation clause in next procurement contract renewal.",
-            ],
-            confidence=0.68,
-            source_articles=[t.title for t in ctx.trend_items if t.level == "supplier"][:2],
-        ))
+        insights.append(
+            Insight(
+                scope="supplier",
+                entity_name=name,
+                risk_opportunity="risk" if int(risk or 50) > 60 else "opportunity",
+                title=f"Supply continuity assessment: {name}",
+                description=(
+                    f"{name} (region: {region}) carries a risk score of {risk}. "
+                    f"Recent news signals point to operational or geopolitical pressures "
+                    f"affecting delivery reliability from this supplier."
+                ),
+                predicted_impact="Delivery delays of 2–4 weeks and potential cost uplift of 5–15%.",
+                time_horizon="short-term",
+                severity="high" if int(risk or 50) >= 70 else "medium",
+                recommended_actions=[
+                    f"Schedule business continuity review call with {name}.",
+                    "Increase on-hand inventory buffer to 8 weeks.",
+                    "Identify and onboard secondary supplier in alternate region.",
+                    "Insert escalation clause in next procurement contract renewal.",
+                ],
+                confidence=0.68,
+                source_articles=[
+                    t.title for t in ctx.trend_items if t.level == "supplier"
+                ][:2],
+            )
+        )
 
     global_trends = ctx.global_context or []
     for g in global_trends[:2]:
         trend = g.get("macro_trend", "global risk")
         severity = g.get("severity", "medium")
-        insights.append(Insight(
-            scope="global",
-            entity_name="Global",
-            risk_opportunity="risk",
-            title=f"Global macro risk: {trend[:60]}",
-            description=(
-                f"The macro trend '{trend}' poses a systemic risk to the manufacturer's supply chain. "
-                f"Industry data and recent news confirm the trend is active and escalating."
-            ),
-            predicted_impact="Broad supply chain disruption with 3–6 month recovery horizon.",
-            time_horizon=g.get("time_horizon", "medium-term"),
-            severity=severity,
-            recommended_actions=[
-                "Brief executive leadership on macro risk landscape.",
-                "Activate supply chain war-game scenario for this disruption type.",
-                "Review insurance coverage for supply chain interruption.",
-                "Accelerate supplier-diversification roadmap.",
-            ],
-            confidence=0.65,
-            source_articles=[t.title for t in ctx.trend_items if t.level == "global"][:2],
-        ))
+        insights.append(
+            Insight(
+                scope="global",
+                entity_name="Global",
+                risk_opportunity="risk",
+                title=f"Global macro risk: {trend[:60]}",
+                description=(
+                    f"The macro trend '{trend}' poses a systemic risk to the manufacturer's supply chain. "
+                    f"Industry data and recent news confirm the trend is active and escalating."
+                ),
+                predicted_impact="Broad supply chain disruption with 3–6 month recovery horizon.",
+                time_horizon=g.get("time_horizon", "medium-term"),
+                severity=severity,
+                recommended_actions=[
+                    "Brief executive leadership on macro risk landscape.",
+                    "Activate supply chain war-game scenario for this disruption type.",
+                    "Review insurance coverage for supply chain interruption.",
+                    "Accelerate supplier-diversification roadmap.",
+                ],
+                confidence=0.65,
+                source_articles=[
+                    t.title for t in ctx.trend_items if t.level == "global"
+                ][:2],
+            )
+        )
 
     return insights
 
 
 # ── LLM log persistence (fire-and-forget, best effort) ────────────────
+
 
 def _persist_llm_log(
     call_id: str,

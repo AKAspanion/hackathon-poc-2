@@ -28,10 +28,10 @@ from app.services.agent_orchestrator import (
     generate_opportunity_plan,
 )
 from app.services.agent_types import OemScope
-from app.services.data_sources.manager import get_data_source_manager
-from app.services.weather_agent_graph import run_weather_agent_graph
-from app.services.news_agent_graph import run_news_agent_graph
-from app.services.shipment_agent_graph import run_shipment_agent_graph
+from app.data.manager import get_data_source_manager
+from app.agents.weather import run_weather_agent_graph
+from app.agents.news import run_news_agent_graph
+from app.agents.shipment import run_shipment_agent_graph
 from app.services.websocket_manager import (
     broadcast_agent_status,
     broadcast_suppliers_snapshot,
@@ -65,9 +65,7 @@ def _ensure_agent_status(db: Session) -> AgentStatusEntity:
     most recently created row.
     """
     status = (
-        db.query(AgentStatusEntity)
-        .order_by(AgentStatusEntity.createdAt.desc())
-        .first()
+        db.query(AgentStatusEntity).order_by(AgentStatusEntity.createdAt.desc()).first()
     )
     if not status:
         status = AgentStatusEntity(
@@ -208,8 +206,7 @@ def get_oem_scope(db: Session, oem_id: UUID) -> OemScope | None:
 
 def _build_data_source_params(scope: OemScope) -> dict:
     cities = (
-        scope.get("cities")
-        or scope.get("locations")[:10]
+        scope.get("cities") or scope.get("locations")[:10]
         if scope.get("locations")
         else ["New York", "London", "Tokyo", "Mumbai", "Shanghai"]
     )
@@ -235,10 +232,9 @@ def _build_data_source_params(scope: OemScope) -> dict:
             routes.append({"origin": c, "destination": oem_city})
     if not routes:
         routes = [{"origin": "New York", "destination": "Los Angeles"}]
-    keywords = (
-        ["supply chain", "manufacturing", "logistics"]
-        + (scope.get("commodities") or [])[:3]
-    )
+    keywords = ["supply chain", "manufacturing", "logistics"] + (
+        scope.get("commodities") or []
+    )[:3]
     return {
         "cities": cities,
         "commodities": commodities,
@@ -250,8 +246,12 @@ def _build_data_source_params(scope: OemScope) -> dict:
 def _build_global_news_params() -> dict:
     return {
         "keywords": [
-            "global supply chain", "geopolitical risk", "trade disruption",
-            "raw materials shortage", "logistics crisis", "shipping capacity",
+            "global supply chain",
+            "geopolitical risk",
+            "trade disruption",
+            "raw materials shortage",
+            "logistics crisis",
+            "shipping capacity",
         ]
     }
 
@@ -273,7 +273,7 @@ def _compute_risk_score(risks: list) -> tuple[float, dict, dict]:
         severity_counts[sev] = severity_counts.get(sev, 0) + 1
         sev_weight = SEVERITY_WEIGHT.get(sev, 2)
 
-        src = (r.sourceType or "other")
+        src = r.sourceType or "other"
         domain_weight = DOMAIN_WEIGHTS.get(src, 1.0)
 
         # Risk-pointer aware nudges based on richer sourceData.
@@ -289,9 +289,9 @@ def _compute_risk_score(risks: list) -> tuple[float, dict, dict]:
             elif delay == "high" or stagnation == "high":
                 pointer_boost = 1.25
         elif src == "weather":
-            exposure = (
-                (src_data or {}).get("weatherExposure") or {}
-            ).get("weather_exposure_score")
+            exposure = ((src_data or {}).get("weatherExposure") or {}).get(
+                "weather_exposure_score"
+            )
             if isinstance(exposure, (int, float)):
                 if exposure >= 80:
                     pointer_boost = 1.4
@@ -361,9 +361,13 @@ async def _broadcast_current_status(
     """
     Build a lightweight status payload and broadcast it to websocket clients.
     """
-    ent = get_status(db) if agent_status_id is None else db.query(
-        AgentStatusEntity
-    ).filter(AgentStatusEntity.id == agent_status_id).first()
+    ent = (
+        get_status(db)
+        if agent_status_id is None
+        else db.query(AgentStatusEntity)
+        .filter(AgentStatusEntity.id == agent_status_id)
+        .first()
+    )
     if not ent:
         return
     payload = {
@@ -376,9 +380,7 @@ async def _broadcast_current_status(
         "risksDetected": ent.risksDetected,
         "opportunitiesIdentified": ent.opportunitiesIdentified,
         "plansGenerated": ent.plansGenerated,
-        "lastUpdated": ent.lastUpdated.isoformat()
-        if ent.lastUpdated
-        else None,
+        "lastUpdated": ent.lastUpdated.isoformat() if ent.lastUpdated else None,
         "createdAt": ent.createdAt.isoformat() if ent.createdAt else None,
     }
     await broadcast_agent_status(payload)
@@ -415,11 +417,14 @@ async def _broadcast_suppliers_for_oem(db: Session, oem_id: UUID) -> None:
             "latestRiskLevel": getattr(s, "latestRiskLevel", None),
             "createdAt": s.createdAt.isoformat() if s.createdAt else None,
             "updatedAt": s.updatedAt.isoformat() if s.updatedAt else None,
-            "riskSummary": risk_map.get(s.name, {
-                "count": 0,
-                "bySeverity": {},
-                "latest": None,
-            }),
+            "riskSummary": risk_map.get(
+                s.name,
+                {
+                    "count": 0,
+                    "bySeverity": {},
+                    "latest": None,
+                },
+            ),
             "swarm": swarm_map.get(s.name),
         }
         for s in suppliers
@@ -452,12 +457,9 @@ async def _run_analysis_for_oem(
     )
     await _broadcast_current_status(db, agent_status_id)
     supplier_params = _build_data_source_params(scope)
-    supplier_data = await manager.fetch_by_types(
-        ["weather", "news"], supplier_params
-    )
+    supplier_data = await manager.fetch_by_types(["weather", "news"], supplier_params)
     logger.info(
-        "_run_analysis_for_oem: supplier data fetched "
-        "weather=%d news=%d for OEM %s",
+        "_run_analysis_for_oem: supplier data fetched weather=%d news=%d for OEM %s",
         len(supplier_data.get("weather") or []),
         len(supplier_data.get("news") or []),
         scope["oemName"],
@@ -474,9 +476,7 @@ async def _run_analysis_for_oem(
     news_only = {"news": supplier_data.get("news") or []}
 
     weather_result = await run_weather_agent_graph(weather_only, scope)
-    news_result = await run_news_agent_graph(
-        news_only, scope, context="supplier"
-    )
+    news_result = await run_news_agent_graph(news_only, scope, context="supplier")
 
     combined_risks = (weather_result.get("risks") or []) + (
         news_result.get("risks") or []
@@ -528,12 +528,8 @@ async def _run_analysis_for_oem(
         agent_status_id,
     )
     await _broadcast_current_status(db, agent_status_id)
-    global_data = await manager.fetch_by_types(
-        ["news"], _build_global_news_params()
-    )
-    global_result = await run_news_agent_graph(
-        global_data, scope, context="global"
-    )
+    global_data = await manager.fetch_by_types(["news"], _build_global_news_params())
+    global_result = await run_news_agent_graph(global_data, scope, context="global")
     logger.info(
         "_run_analysis_for_oem: global news analysis risks=%d for OEM %s",
         len(global_result.get("risks") or []),
@@ -560,9 +556,7 @@ async def _run_analysis_for_oem(
     )
     await _broadcast_current_status(db, agent_status_id)
     route_params = {"routes": supplier_params["routes"]}
-    route_data = await manager.fetch_by_types(
-        ["traffic", "shipping"], route_params
-    )
+    route_data = await manager.fetch_by_types(["traffic", "shipping"], route_params)
     # Run Shipment Agent (LangGraph + LangChain) on shipping data.
     shipping_only = {"shipping": route_data.get("shipping") or []}
     shipping_result = await run_shipment_agent_graph(shipping_only, scope)
@@ -602,8 +596,7 @@ async def _run_analysis_for_oem(
     db.add(score_ent)
     db.commit()
     logger.info(
-        "_run_analysis_for_oem: risk score stored overall=%s for OEM %s "
-        "(risks=%d)",
+        "_run_analysis_for_oem: risk score stored overall=%s for OEM %s (risks=%d)",
         overall,
         scope["oemName"],
         len(all_risks),
@@ -687,8 +680,7 @@ async def _run_analysis_for_oem(
         )
         combined_plans_created += 1
     logger.info(
-        "_run_analysis_for_oem: combined mitigation plans created=%d "
-        "for OEM %s",
+        "_run_analysis_for_oem: combined mitigation plans created=%d for OEM %s",
         combined_plans_created,
         scope["oemName"],
     )
@@ -712,9 +704,7 @@ async def _run_analysis_for_oem(
         if risk.id in risks_with_plan_supplier:
             continue
         plans = (
-            db.query(MitigationPlan)
-            .filter(MitigationPlan.riskId == risk.id)
-            .count()
+            db.query(MitigationPlan).filter(MitigationPlan.riskId == risk.id).count()
         )
         if plans > 0:
             continue
@@ -722,22 +712,27 @@ async def _run_analysis_for_oem(
         # comma-separated label for readability in the prompt.
         aff_label = None
         if getattr(risk, "affectedSuppliers", None):
-            aff_label = ", ".join(
-                [
-                    str(n).strip()
-                    for n in (risk.affectedSuppliers or [])
-                    if str(n).strip()
-                ]
-            ) or None
+            aff_label = (
+                ", ".join(
+                    [
+                        str(n).strip()
+                        for n in (risk.affectedSuppliers or [])
+                        if str(n).strip()
+                    ]
+                )
+                or None
+            )
         if not aff_label:
             aff_label = risk.affectedSupplier
-        plan_data = await generate_mitigation_plan({
-            "title": risk.title,
-            "description": risk.description,
-            "severity": getattr(risk.severity, "value", risk.severity),
-            "affectedRegion": risk.affectedRegion,
-            "affectedSupplier": aff_label,
-        })
+        plan_data = await generate_mitigation_plan(
+            {
+                "title": risk.title,
+                "description": risk.description,
+                "severity": getattr(risk.severity, "value", risk.severity),
+                "affectedRegion": risk.affectedRegion,
+                "affectedSupplier": aff_label,
+            }
+        )
         if plan_data and plan_data.get("title"):
             create_plan_from_dict(
                 db,
@@ -754,8 +749,7 @@ async def _run_analysis_for_oem(
                 risk.id,
             )
     logger.info(
-        "_run_analysis_for_oem: per-risk mitigation plans created=%d "
-        "for OEM %s",
+        "_run_analysis_for_oem: per-risk mitigation plans created=%d for OEM %s",
         per_risk_plans_created,
         scope["oemName"],
     )
@@ -779,12 +773,14 @@ async def _run_analysis_for_oem(
             > 0
         ):
             continue
-        plan_data = await generate_opportunity_plan({
-            "title": opp.title,
-            "description": opp.description,
-            "type": getattr(opp.type, "value", opp.type),
-            "potentialBenefit": opp.potentialBenefit,
-        })
+        plan_data = await generate_opportunity_plan(
+            {
+                "title": opp.title,
+                "description": opp.description,
+                "type": getattr(opp.type, "value", opp.type),
+                "potentialBenefit": opp.potentialBenefit,
+            }
+        )
         if plan_data and plan_data.get("title"):
             create_plan_from_dict(
                 db,
@@ -811,9 +807,7 @@ def get_status(db: Session) -> AgentStatusEntity | None:
     Used by the dashboard to display the current/last run.
     """
     return (
-        db.query(AgentStatusEntity)
-        .order_by(AgentStatusEntity.createdAt.desc())
-        .first()
+        db.query(AgentStatusEntity).order_by(AgentStatusEntity.createdAt.desc()).first()
     )
 
 
@@ -906,9 +900,7 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
                 agent_status_id=run.id,
             )
         else:
-            logger.info(
-                "trigger_manual_analysis_sync: starting run for all OEMs"
-            )
+            logger.info("trigger_manual_analysis_sync: starting run for all OEMs")
             oems = get_all_oems(db)
             if not oems:
                 _update_status(
@@ -947,11 +939,9 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
                     db,
                     oem_id=oem.id,
                     workflow_run_id=workflow_run.id,
-                    initial_task=f"Monitoring cycle for OEM: {o.name}",
+                    initial_task=f"Monitoring cycle for OEM: {oem.name}",
                 )
-                asyncio.run(
-                    _run_analysis_for_oem(db, scope, run.id, workflow_run.id)
-                )
+                asyncio.run(_run_analysis_for_oem(db, scope, run.id, workflow_run.id))
                 run.risksDetected = (
                     db.query(Risk)
                     .filter(
@@ -1006,7 +996,5 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
 
 def run_scheduled_cycle(db: Session) -> None:
     """Scheduled agent cycle. Disabled; use POST /agent/trigger to run."""
-    logger.info(
-        "run_scheduled_cycle: disabled; use POST /agent/trigger to run."
-    )
+    logger.info("run_scheduled_cycle: disabled; use POST /agent/trigger to run.")
     return

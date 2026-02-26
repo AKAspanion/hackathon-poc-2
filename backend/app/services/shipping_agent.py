@@ -18,9 +18,7 @@ def _build_client() -> OpenAI:
     api_key = settings.openai_api_key
     base_url = settings.openai_base_url
     if not api_key:
-        raise RuntimeError(
-            "OPENAI_API_KEY must be set to use the shipment agent."
-        )
+        raise RuntimeError("OPENAI_API_KEY must be set to use the shipment agent.")
     if base_url:
         return OpenAI(api_key=api_key, base_url=base_url)
     return OpenAI(api_key=api_key)
@@ -44,9 +42,7 @@ Respond strictly as a single JSON object; no prose outside JSON.
 
 def _tool_get_supplier_details(db: Session, supplier_id: int) -> dict[str, Any]:
     supplier = (
-        db.query(ShippingSupplier)
-        .filter(ShippingSupplier.id == supplier_id)
-        .first()
+        db.query(ShippingSupplier).filter(ShippingSupplier.id == supplier_id).first()
     )
     if not supplier:
         return {"error": f"Supplier {supplier_id} not found"}
@@ -65,9 +61,7 @@ def _tool_get_supplier_details(db: Session, supplier_id: int) -> dict[str, Any]:
 def _tool_get_shipments_for_supplier(
     db: Session, supplier_id: int
 ) -> list[dict[str, Any]]:
-    shipments = (
-        db.query(Shipment).filter(Shipment.supplier_id == supplier_id).all()
-    )
+    shipments = db.query(Shipment).filter(Shipment.supplier_id == supplier_id).all()
     return [
         {
             "id": sh.id,
@@ -75,9 +69,7 @@ def _tool_get_shipments_for_supplier(
             "courier_name": sh.courier_name,
             "origin_city": sh.origin_city,
             "destination_city": sh.destination_city,
-            "pickup_date": (
-                sh.pickup_date.isoformat() if sh.pickup_date else None
-            ),
+            "pickup_date": (sh.pickup_date.isoformat() if sh.pickup_date else None),
             "expected_delivery_date": (
                 sh.expected_delivery_date.isoformat()
                 if sh.expected_delivery_date

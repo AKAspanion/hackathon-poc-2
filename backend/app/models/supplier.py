@@ -19,7 +19,9 @@ class Supplier(Base):
     name = Column(String, nullable=False)
     location = Column(String, nullable=True)
     city = Column(String, nullable=True)
+    # Keep existing country while also allowing explicit ISO-style countryCode.
     country = Column(String, nullable=True)
+    countryCode = Column(String, nullable=True)
     region = Column(String, nullable=True)
     commodities = Column(String, nullable=True)
     metadata_ = Column("metadata", JSONB, nullable=True)

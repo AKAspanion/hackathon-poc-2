@@ -75,6 +75,7 @@ def create_opportunity_from_dict(
     db: Session,
     data: dict,
     agent_status_id: UUID | None = None,
+    workflow_run_id: UUID | None = None,
 ) -> Opportunity:
     type_val = data.get("type", "cost_saving")
     if isinstance(type_val, str):
@@ -92,10 +93,14 @@ def create_opportunity_from_dict(
         sourceType=data.get("sourceType", "unknown"),
         sourceData=data.get("sourceData"),
         affectedRegion=data.get("affectedRegion"),
+        affectedSuppliers=data.get("affectedSuppliers"),
+        impactDescription=data.get("impactDescription"),
         potentialBenefit=data.get("potentialBenefit"),
         estimatedValue=_sanitize_numeric(data.get("estimatedValue")),
         oemId=data.get("oemId"),
+        workflowRunId=workflow_run_id,
         agentStatusId=agent_status_id,
+        metadata_=data.get("metadata"),
     )
     db.add(opp)
     db.commit()

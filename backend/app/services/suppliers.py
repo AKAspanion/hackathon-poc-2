@@ -94,6 +94,7 @@ def upload_csv(
                 location=location,
                 city=city,
                 country=country,
+                countryCode=country,
                 region=region,
                 commodities=commodities,
                 metadata_=metadata if metadata else None,

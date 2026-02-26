@@ -16,8 +16,12 @@ class Oem(Base):
     # Optional location metadata (aligned with Supplier for consistency)
     location = Column(String, nullable=True)
     city = Column(String, nullable=True)
+    # Keep existing country while also allowing countryCode for ISO-style codes.
     country = Column(String, nullable=True)
+    countryCode = Column(String, nullable=True)
     region = Column(String, nullable=True)
+    # Simple comma-separated list of commodities for this OEM.
+    commodities = Column(String, nullable=True)
     metadata_ = Column("metadata", JSONB, nullable=True)
 
     createdAt = Column(DateTime(timezone=True), server_default=func.now())

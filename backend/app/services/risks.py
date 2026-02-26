@@ -124,6 +124,7 @@ def create_risk_from_dict(
     db: Session,
     data: dict,
     agent_status_id: UUID | None = None,
+    workflow_run_id: UUID | None = None,
 ) -> Risk:
     oem_id = data.get("oemId")
     supplier_id, supplier_name = _resolve_supplier_id(
@@ -163,11 +164,14 @@ def create_risk_from_dict(
         affectedRegion=data.get("affectedRegion"),
         affectedSupplier=primary_name,
         affectedSuppliers=suppliers_list,
+        impactDescription=data.get("impactDescription"),
         estimatedImpact=data.get("estimatedImpact"),
         estimatedCost=_sanitize_numeric(data.get("estimatedCost")),
         oemId=oem_id,
+        workflowRunId=workflow_run_id,
         supplierId=supplier_id,
         agentStatusId=agent_status_id,
+        metadata_=data.get("metadata"),
     )
     db.add(risk)
     db.commit()

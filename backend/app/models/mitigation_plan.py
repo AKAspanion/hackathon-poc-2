@@ -68,7 +68,12 @@ class MitigationPlan(Base):
         default=PlanStatus.DRAFT,
     )
     riskId = Column(UUID(as_uuid=True), ForeignKey("risks.id"), nullable=True)
-    opportunityId = Column(UUID(as_uuid=True), ForeignKey("opportunities.id"), nullable=True)
+    opportunityId = Column(
+        UUID(as_uuid=True),
+        ForeignKey("opportunities.id"),
+        nullable=True,
+    )
+    # Keep a loose association back to the workflow run via the agent status.
     agentStatusId = Column(
         UUID(as_uuid=True),
         ForeignKey("agent_status.id", ondelete="SET NULL"),

@@ -6,6 +6,9 @@ from app.models.supplier import Supplier
 from app.models.agent_status import AgentStatusEntity, AgentStatus
 from app.models.supply_chain_risk_score import SupplyChainRiskScore
 from app.models.external_api_log import ExternalApiLog
+from app.models.llm_log import LlmLog
+from app.models.workflow_run import WorkflowRun
+from app.models.supplier_risk_analysis import SupplierRiskAnalysis
 
 __all__ = [
     "Oem",
@@ -22,4 +25,7 @@ __all__ = [
     "AgentStatus",
     "SupplyChainRiskScore",
     "ExternalApiLog",
+    "LlmLog",
+    "WorkflowRun",
+    "SupplierRiskAnalysis",
 ]

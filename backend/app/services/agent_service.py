@@ -1005,4 +1005,8 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
 
 
 def run_scheduled_cycle(db: Session) -> None:
-    trigger_manual_analysis_sync(db, None)
+    """Scheduled agent cycle. Disabled; use POST /agent/trigger to run."""
+    logger.info(
+        "run_scheduled_cycle: disabled; use POST /agent/trigger to run."
+    )
+    return

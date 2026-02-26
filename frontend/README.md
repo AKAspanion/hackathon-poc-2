@@ -34,7 +34,7 @@ cp .env.example .env
 
 3. Run development server:
 ```bash
-npm run dev
+yarn dev
 ```
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser
@@ -44,18 +44,22 @@ npm run dev
 ```
 frontend/
 ├── app/
-│   ├── layout.tsx          # Root layout with providers
-│   ├── page.tsx            # Main dashboard page
-│   └── globals.css         # Global styles
-├── components/
-│   ├── AgentStatus.tsx     # Agent status component
-│   ├── RisksList.tsx       # Risks list component
-│   ├── OpportunitiesList.tsx # Opportunities list component
-│   └── MitigationPlansList.tsx # Mitigation plans list component
-└── lib/
-    ├── api.ts              # API client and types
-    └── providers.tsx       # TanStack Query provider
+│   ├── layout.tsx            # Root layout
+│   ├── login/page.tsx        # Email-only login
+│   ├── suppliers/            # Suppliers list + upload; supplier detail [id]
+│   └── (app)/                 # Authenticated app (dashboard, weather/news/shipping risk)
+│       ├── layout.tsx        # App shell (nav, header)
+│       ├── page.tsx          # Dashboard
+│       ├── weather-risk/
+│       ├── news-risk/
+│       └── shipping-risk/
+├── components/               # AgentStatus, RisksList, OpportunitiesList, etc.
+├── lib/                       # api.ts, constants, providers, theme-context
+├── hooks/                     # useWebSocketNotifications
+└── .env.example               # NEXT_PUBLIC_API_URL
 ```
+
+See repo root [docs/APP-ARCHITECTURE.md](../docs/APP-ARCHITECTURE.md) for full layout.
 
 ## Development
 

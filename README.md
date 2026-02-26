@@ -10,12 +10,12 @@ A "Global Watchtower" for manufacturing logistics that continuously monitors rea
 
 ## 🏗️ Architecture
 
-The project is split into two separate applications:
+The project includes the main supply chain app (backend + frontend) and optional mock tooling:
 
 ### Backend (`/backend`)
 - **Framework**: FastAPI (Python 3.11+)
 - **Database**: PostgreSQL with SQLAlchemy
-- **AI/ML**: Anthropic Claude or Ollama (LLM), custom orchestrator
+- **AI/ML**: Anthropic Claude, Ollama, or OpenAI-compatible (LLM), custom orchestrator
 - **Features**:
   - Generic data source connectors (Weather, News, Traffic, Market Trends)
   - AI-powered risk detection and opportunity identification
@@ -33,6 +33,19 @@ The project is split into two separate applications:
   - Risks and opportunities visualization
   - Mitigation plans display
   - Live updates via WebSocket (no polling)
+
+### Mock Server (`/mock-server`) — optional
+- **Purpose**: Extensible mock API server with dynamic endpoints and PostgreSQL storage. Define custom “collections” (e.g. `users`, `products`) via the API; each collection gets full CRUD at `/mock/:collectionSlug`. Useful for prototyping or testing without real backends.
+- **Stack**: Node.js 18+, Express, Prisma, PostgreSQL (database: **mock_db**).
+- **Port**: `http://localhost:4000` (configurable via `PORT`).
+- **Details**: See [mock-server/README.md](mock-server/README.md).
+
+### Mock Server Dashboard (`/mock-server-dashboard`) — optional
+- **Purpose**: Next.js UI to manage **collections** and **records** on the [mock-server](mock-server) backend. Create/edit/delete collections and their JSON records from the browser.
+- **Stack**: Next.js 16, React 19, TanStack Query.
+- **Port**: `http://localhost:5000`.
+- **Requires**: [mock-server](mock-server) running (default `http://localhost:4000`). Set `NEXT_PUBLIC_MOCK_SERVER_URL` if the mock-server runs elsewhere.
+- **Details**: See [mock-server-dashboard/README.md](mock-server-dashboard/README.md).
 
 ## 🚀 Quick Start
 
@@ -75,6 +88,39 @@ yarn dev
 ```
 
 The frontend runs on `http://localhost:3000`.
+
+### Mock Server & Mock Server Dashboard (optional)
+
+To run the optional mock API server and its dashboard:
+
+**Mock Server** (API at `http://localhost:4000`):
+
+```bash
+cd mock-server
+createdb mock_db          # create PostgreSQL DB if needed
+cp .env.example .env      # set DATABASE_URL (e.g. postgresql://user@localhost:5432/mock_db)
+yarn install
+yarn dev                  # or: yarn build && yarn start
+```
+
+**Mock Server Dashboard** (UI at `http://localhost:5000`):
+
+```bash
+cd mock-server-dashboard
+yarn install
+cp .env.example .env      # optional: set NEXT_PUBLIC_MOCK_SERVER_URL if mock-server is not on :4000
+yarn dev
+```
+
+Start the mock-server before the dashboard. From repo root you can use:
+
+```bash
+yarn start:mock-server           # start mock-server
+yarn start:mock-server-dashboard # start mock-server-dashboard
+yarn start:all                   # start mock-server, mock-server-dashboard, backend, frontend
+```
+
+(These require the root `package.json` scripts to be configured.)
 
 ## 📊 Features
 
@@ -119,6 +165,10 @@ Environment variables are documented in [docs/SETUP.md](docs/SETUP.md). Summary:
 
 ## 📡 API Endpoints
 
+### Auth / OEMs
+- `POST /oems/register` - Register OEM (body: name, email)
+- `POST /oems/login` - Login with email (returns JWT)
+
 ### Agent
 - `GET /agent/status` - Get agent status
 - `POST /agent/trigger` - Manually trigger analysis
@@ -143,6 +193,8 @@ Environment variables are documented in [docs/SETUP.md](docs/SETUP.md). Summary:
 - `POST /mitigation-plans` - Create plan
 - `PUT /mitigation-plans/:id` - Update plan
 
+Other routes: `/suppliers`, `/shipping/suppliers`, `/shipping/shipping-risk`, `/shipping/tracking`, `/trend-insights`, `/api/v1/*` (weather agent).
+
 ## 🧪 Development
 
 ### Backend
@@ -166,28 +218,34 @@ See [docs/APP-ARCHITECTURE.md](docs/APP-ARCHITECTURE.md) for a full overview. Su
 
 ```
 hackathon-2/
-├── backend/
+├── backend/                    # FastAPI supply chain API (port 8000)
 │   ├── app/
 │   │   ├── api/                # FastAPI routes (REST + WebSocket)
 │   │   ├── models/             # SQLAlchemy models
-│   │   ├── services/           # Agent logic, data sources, orchestrator
+│   │   ├── data/               # Data sources (weather, news, traffic, market, shipping)
+│   │   ├── services/           # Agent logic, orchestrator
 │   │   ├── schemas/            # Pydantic schemas
 │   │   ├── config.py           # Settings (env-backed)
-│   │   └── database.py         # DB session / engine
-│   ├── .env.example            # Backend env template
-│   ├── ensure_db.py            # Create PostgreSQL DB if missing
-│   ├── start.sh                # One-command backend start
+│   │   ├── database.py         # DB session / engine
+│   │   └── seed.py             # Seed OEMs/suppliers/shipping if empty
+│   ├── .env.example
+│   ├── ensure_db.py
+│   ├── start.sh
 │   └── requirements.txt
-├── frontend/
-│   ├── app/                    # Next.js App Router
-│   ├── components/             # React components
-│   ├── lib/                    # API client, constants, providers
-│   ├── .env.example            # Frontend env template
+├── frontend/                   # Next.js supply chain dashboard (port 3000)
+│   ├── app/
+│   ├── components/
+│   ├── lib/
+│   ├── .env.example
 │   └── public/
+├── mock-server/                # Optional: dynamic mock API (port 4000, DB: mock_db)
+│   └── README.md
+├── mock-server-dashboard/      # Optional: UI for mock-server collections/records (port 5000)
+│   └── README.md
 ├── docs/
-│   ├── SETUP.md                # Setup guide (backend + frontend)
-│   ├── APP-ARCHITECTURE.md     # Application architecture
-│   └── DB-ARCHITECTURE.md      # Database schema and relations
+│   ├── SETUP.md
+│   ├── APP-ARCHITECTURE.md
+│   └── DB-ARCHITECTURE.md
 └── README.md
 ```
 
@@ -195,10 +253,10 @@ hackathon-2/
 
 To add a new data source in the Python backend:
 
-1. **Create a new data source class** in `backend/app/services/data_sources/`, extending `BaseDataSource`:
+1. **Create a new data source class** in `backend/app/data/`, extending `BaseDataSource` (e.g. `backend/app/data/new_source.py`):
 
 ```python
-from app.services.data_sources.base import BaseDataSource, DataSourceResult
+from app.data.base import BaseDataSource, DataSourceResult
 
 
 class NewDataSource(BaseDataSource):
@@ -220,10 +278,10 @@ class NewDataSource(BaseDataSource):
         return [self._create_result(payload)]
 ```
 
-2. **Register it with the `DataSourceManager`** in `backend/app/services/data_sources/manager.py`:
+2. **Register it with the `DataSourceManager`** in `backend/app/data/manager.py`:
 
 ```python
-from app.services.data_sources.new_source import NewDataSource
+from app.data.new_source import NewDataSource
 
 # inside DataSourceManager.initialize()
 new_source = NewDataSource()
@@ -237,14 +295,14 @@ self._sources[new_source.get_type()] = new_source
 
 - **Responsive Design**: Works on all screen sizes
 - **Dark Mode**: Automatic dark mode support
-- **Real-time Updates**: Auto-refresh every 30 seconds
+- **Real-time Updates**: WebSocket for live agent updates; TanStack Query refetch every 30s as fallback
 - **Loading States**: Smooth loading indicators
 - **Error Handling**: Graceful error messages
 
 ## 📝 Notes
 
 - The system works with mock data if API keys are not configured.
-- Database schema is auto-synced in development mode.
+- Database tables are created at startup if missing (no migration system).
 - Agent runs **on demand** when `/agent/trigger` is called (e.g. from the dashboard). You can wire this into an external scheduler or cron if you want fully automatic cycles.
 - All AI analysis uses Anthropic Claude or another configured LLM provider (fallback to mock if API key is not set).
 

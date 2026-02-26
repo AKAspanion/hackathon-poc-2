@@ -68,7 +68,7 @@ backend/
     │   ├── websocket_manager.py
     │   └── ...
     ├── agents/             # Agent-specific logic (weather, news, shipment, etc.)
-    ├── data/               # Data source implementations (weather, news, traffic, trends)
+    ├── data/               # Data source implementations (weather, news, traffic, market, shipping, trends)
     ├── core/               # Shared core (e.g. risk_engine)
     └── orchestration/      # Orchestration (e.g. agent_service)
 ```

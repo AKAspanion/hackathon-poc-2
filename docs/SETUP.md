@@ -122,13 +122,15 @@ Edit `.env` with your values. All keys are documented below.
 
 ### 3. Create database (if using PostgreSQL)
 
-Ensure PostgreSQL is running, then create the application database if it does not exist:
+Ensure PostgreSQL is running, then create the application database if it does not exist. If you use **Option B** (manual run), activate your virtualenv first so `python` can import the app and psycopg2:
 
 ```bash
+# If using manual setup (Option B), activate venv first:
+# source .venv/bin/activate
 python ensure_db.py
 ```
 
-This uses `DATABASE_URL` or `DB_*` from `.env`. Non-fatal if DB already exists or if you skip DB.
+This uses `DATABASE_URL` or `DB_*` from `.env`. Non-fatal if DB already exists or if you skip DB. **Option A** (`./start.sh`) runs this for you.
 
 ### 4. Install dependencies and run
 

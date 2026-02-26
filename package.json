@@ -1,0 +1,23 @@
+{
+  "name": "hackathon-2",
+  "version": "0.0.1",
+  "description": "All code for hackathon",
+  "homepage": "https://github.com/AKAspanion/hackathon-poc-2#readme",
+  "bugs": {
+    "url": "https://github.com/AKAspanion/hackathon-poc-2/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AKAspanion/hackathon-poc-2.git"
+  },
+  "license": "ISC",
+  "author": "AKASpanion",
+  "type": "commonjs",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}

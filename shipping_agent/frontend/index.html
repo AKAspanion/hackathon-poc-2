@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Shipping Risk Intelligence Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #151a2b;
+      --accent: #4f46e5;
+      --accent-soft: rgba(79, 70, 229, 0.15);
+      --text: #f9fafb;
+      --muted: #9ca3af;
+      --danger: #f97373;
+      --warning: #fbbf24;
+      --success: #34d399;
+      --border: #1f2937;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background: radial-gradient(circle at top, #111827, #020617 55%);
+      color: var(--text);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+      gap: 1.5rem;
+      padding: 1.5rem 2rem;
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.25rem;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      letter-spacing: 0.03em;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    header h1 span.logo-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      background: radial-gradient(circle at 30% 20%, #a5b4fc, #4f46e5 60%, #1d4ed8 100%);
+      box-shadow: 0 0 16px rgba(79, 70, 229, 0.6);
+      font-size: 0.9rem;
+    }
+
+    header .meta {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .panel {
+      background: radial-gradient(circle at top left, rgba(79, 70, 229, 0.15), transparent 55%), var(--panel);
+      border-radius: 16px;
+      border: 1px solid rgba(31, 41, 55, 0.8);
+      padding: 1rem 1.25rem 1.25rem;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.55);
+    }
+
+    .panel h2 {
+      font-size: 0.9rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 0.75rem;
+    }
+
+    .panel-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border-radius: 999px;
+      padding: 0.1rem 0.55rem;
+      font-size: 0.7rem;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(55, 65, 81, 0.9);
+      color: var(--muted);
+    }
+
+    .pill-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--success);
+      box-shadow: 0 0 8px rgba(52, 211, 153, 0.9);
+    }
+
+    .supplier-list {
+      max-height: calc(100vh - 170px);
+      overflow-y: auto;
+      padding-right: 0.45rem;
+    }
+
+    .supplier-card {
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 0.7rem 0.75rem;
+      margin-bottom: 0.6rem;
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(15, 23, 42, 0.82));
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease, transform 0.05s ease;
+    }
+
+    .supplier-card:hover {
+      border-color: rgba(129, 140, 248, 0.8);
+      background: linear-gradient(135deg, rgba(30, 64, 175, 0.28), rgba(15, 23, 42, 0.9));
+      transform: translateY(-1px);
+    }
+
+    .supplier-card.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(79, 70, 229, 0.45);
+    }
+
+    .supplier-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 0.25rem;
+    }
+
+    .supplier-title span.name {
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    .supplier-title span.material {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .supplier-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-bottom: 0.45rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .supplier-meta-row span {
+      padding: 0.1rem 0.45rem;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(31, 41, 55, 0.9);
+    }
+
+    .card-actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.4rem;
+      margin-top: 0.3rem;
+    }
+
+    button {
+      border-radius: 999px;
+      border: none;
+      padding: 0.35rem 0.8rem;
+      font-size: 0.72rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 10px 25px rgba(79, 70, 229, 0.45);
+      transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+    }
+
+    button.secondary {
+      background: rgba(15, 23, 42, 0.95);
+      color: var(--muted);
+      box-shadow: none;
+      border: 1px solid rgba(55, 65, 81, 0.9);
+    }
+
+    button:hover {
+      transform: translateY(-0.5px);
+      box-shadow: 0 14px 30px rgba(79, 70, 229, 0.65);
+    }
+
+    button.secondary:hover {
+      background: rgba(30, 64, 175, 0.3);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.9);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: default;
+      box-shadow: none;
+    }
+
+    .results-grid {
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 0.75rem;
+      height: calc(100vh - 120px);
+    }
+
+    .risk-summary {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .score-ring {
+      width: 80px;
+      height: 80px;
+      border-radius: 999px;
+      background: conic-gradient(var(--accent) 0deg, var(--accent) 0deg, rgba(31, 41, 55, 1) 0deg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .score-ring-inner {
+      width: 64px;
+      height: 64px;
+      border-radius: 999px;
+      background: radial-gradient(circle at top, #020617, #020617 60%, #111827 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      font-size: 0.85rem;
+    }
+
+    .score-ring-inner span.value {
+      font-weight: 600;
+      font-size: 1.1rem;
+    }
+
+    .risk-level-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      border-radius: 999px;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.72rem;
+      border: 1px solid rgba(55, 65, 81, 0.9);
+    }
+
+    .risk-level-badge.low {
+      color: var(--success);
+      border-color: rgba(34, 197, 94, 0.6);
+      background: rgba(22, 163, 74, 0.1);
+    }
+
+    .risk-level-badge.medium {
+      color: var(--warning);
+      border-color: rgba(251, 191, 36, 0.6);
+      background: rgba(161, 98, 7, 0.15);
+    }
+
+    .risk-level-badge.high,
+    .risk-level-badge.critical {
+      color: var(--danger);
+      border-color: rgba(248, 113, 113, 0.7);
+      background: rgba(127, 29, 29, 0.25);
+    }
+
+    .subscores {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .subscore-pill {
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      border: 1px solid rgba(55, 65, 81, 0.9);
+      background: rgba(15, 23, 42, 0.95);
+    }
+
+    .flex-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.6rem;
+      font-size: 0.8rem;
+    }
+
+    .list {
+      list-style: none;
+      margin: 0;
+      padding-left: 1rem;
+    }
+
+    .list li::marker {
+      color: var(--accent);
+    }
+
+    .timeline {
+      margin-top: 0.25rem;
+      max-height: 220px;
+      overflow-y: auto;
+      padding-right: 0.4rem;
+    }
+
+    .timeline-item {
+      display: flex;
+      gap: 0.65rem;
+      margin-bottom: 0.55rem;
+      font-size: 0.78rem;
+    }
+
+    .timeline-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      margin-top: 0.2rem;
+      background: var(--accent);
+      box-shadow: 0 0 8px rgba(79, 70, 229, 0.8);
+    }
+
+    .timeline-body span.date {
+      font-size: 0.7rem;
+      color: var(--muted);
+    }
+
+    pre.json-view {
+      background: rgba(15, 23, 42, 0.95);
+      border-radius: 10px;
+      border: 1px solid rgba(31, 41, 55, 0.95);
+      padding: 0.6rem 0.75rem;
+      font-size: 0.72rem;
+      max-height: 220px;
+      overflow: auto;
+      color: #e5e7eb;
+    }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .status-bar .right {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 6px rgba(79, 70, 229, 0.8);
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .results-grid {
+        height: auto;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="layout">
+    <header>
+      <h1><span class="logo-pill">S</span> Shipping Risk Intelligence</h1>
+      <div class="meta">
+        <div>Manufacturing hub: <strong>Bangalore, India</strong></div>
+        <div style="font-size: 0.75rem;">Shipment Agent · LLM + Tracking + PostgreSQL</div>
+      </div>
+    </header>
+
+    <section class="panel">
+      <div class="panel-header-row">
+        <h2>Suppliers</h2>
+        <div class="pill"><span class="pill-dot"></span> Live mock data</div>
+      </div>
+      <div id="supplier-list" class="supplier-list"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header-row">
+        <h2>Risk & Tracking</h2>
+        <div class="status-bar">
+          <span id="status-text">Select a supplier to run the Shipment Agent.</span>
+          <span class="right">
+            <span class="status-dot"></span>
+            <span id="status-meta">Idle</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="results-grid">
+        <div class="risk-summary" id="risk-summary"></div>
+        <div class="two-col">
+          <div class="flex-col">
+            <strong style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted);">Risk
+              factors</strong>
+            <ul id="risk-factors" class="list"></ul>
+          </div>
+          <div class="flex-col">
+            <strong style="font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted);">Recommended
+              actions</strong>
+            <ul id="recommended-actions" class="list"></ul>
+          </div>
+        </div>
+
+        <div class="two-col" style="gap: 0.75rem;">
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.35rem;">
+              <strong style="font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);">Tracking
+                timeline</strong>
+              <span id="tracking-awb" style="font-size:0.72rem;color:var(--muted);"></span>
+            </div>
+            <div id="timeline" class="timeline"></div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.35rem;">
+              <strong style="font-size:0.78rem;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);">Shipment
+                metadata (JSON)</strong>
+            </div>
+            <pre id="metadata-json" class="json-view">No data yet.</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const AWB_BY_SUPPLIER = {
+      "Chennai Chip Supplier": "AWB-CHEN-001",
+      "Mumbai Electronics Ltd": "AWB-MUM-002",
+      "Delhi Precision Parts": "AWB-DEL-003",
+      "Pune Motor Components": "AWB-PUN-004",
+      "Kolkata Steel Supplier": "AWB-KOL-005",
+    };
+
+    let currentSupplierId = null;
+    let isRunning = false;
+
+    function setStatus(text, meta) {
+      document.getElementById("status-text").textContent = text;
+      if (meta) document.getElementById("status-meta").textContent = meta;
+    }
+
+    function scoreToAngle(score) {
+      const value = Math.max(0, Math.min(1, score));
+      return value * 360;
+    }
+
+    function riskLevelClass(level) {
+      if (!level) return "medium";
+      const l = level.toLowerCase();
+      if (l === "low") return "low";
+      if (l === "medium") return "medium";
+      if (l === "high") return "high";
+      if (l === "critical") return "critical";
+      return "medium";
+    }
+
+    async function loadSuppliers() {
+      const container = document.getElementById("supplier-list");
+      container.innerHTML = "Loading suppliers...";
+      try {
+        const res = await fetch("/suppliers");
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) {
+          container.innerHTML = "No suppliers found. Seed script will populate data on next startup.";
+          return;
+        }
+        container.innerHTML = "";
+        data.forEach((s) => {
+          const card = document.createElement("div");
+          card.className = "supplier-card";
+          card.dataset.id = s.id;
+
+          card.innerHTML = `
+            <div class="supplier-title">
+              <span class="name">${s.name}</span>
+              <span class="material">${s.material_name}</span>
+            </div>
+            <div class="supplier-meta-row">
+              <span>${s.location_city || "?"} → ${s.destination_city || "Bangalore"}</span>
+              <span>${s.shipping_mode}</span>
+              <span>${s.distance_km || "?"} km</span>
+              <span>ETA ~ ${s.avg_transit_days || "?"} days</span>
+            </div>
+            <div class="card-actions">
+              <button class="run-risk">Run Shipment Agent</button>
+              <button class="secondary view-tracking">View Tracking</button>
+            </div>
+          `;
+
+          card.querySelector(".run-risk").addEventListener("click", (e) => {
+            e.stopPropagation();
+            runRiskForSupplier(s.id, s.name);
+          });
+
+          card.querySelector(".view-tracking").addEventListener("click", (e) => {
+            e.stopPropagation();
+            viewTrackingForSupplier(s.name);
+          });
+
+          card.addEventListener("click", () => {
+            document.querySelectorAll(".supplier-card").forEach((el) => el.classList.remove("active"));
+            card.classList.add("active");
+            currentSupplierId = s.id;
+          });
+
+          container.appendChild(card);
+        });
+      } catch (err) {
+        console.error(err);
+        container.innerHTML = "Failed to load suppliers.";
+      }
+    }
+
+    function renderRiskResult(result) {
+      const summary = document.getElementById("risk-summary");
+      summary.innerHTML = "";
+
+      if (!result) {
+        summary.textContent = "No risk result yet.";
+        return;
+      }
+
+      const score = typeof result.shipping_risk_score === "number" ? result.shipping_risk_score : 0.5;
+      const degree = scoreToAngle(score);
+      const levelClass = riskLevelClass(result.risk_level);
+
+      const ring = document.createElement("div");
+      ring.className = "score-ring";
+      ring.style.background = `conic-gradient(var(--accent) 0deg, var(--accent) ${degree}deg, rgba(31, 41, 55, 1) ${degree}deg)`;
+
+      const inner = document.createElement("div");
+      inner.className = "score-ring-inner";
+      inner.innerHTML = `<span class="value">${(score * 100).toFixed(0)}%</span><span style="font-size:0.68rem;color:var(--muted);">risk</span>`;
+      ring.appendChild(inner);
+
+      const right = document.createElement("div");
+      right.className = "flex-col";
+
+      const lvl = document.createElement("div");
+      lvl.className = `risk-level-badge ${levelClass}`;
+      lvl.textContent = `Risk level: ${result.risk_level || "Medium"}`;
+
+      const subs = document.createElement("div");
+      subs.className = "subscores";
+      const delay = result.delay_risk_score;
+      const stag = result.stagnation_risk_score;
+      const vel = result.velocity_risk_score;
+
+      function pill(label, value) {
+        const span = document.createElement("span");
+        span.className = "subscore-pill";
+        const v = typeof value === "number" ? value : null;
+        span.textContent = `${label}: ${v !== null ? (v * 100).toFixed(0) + "%" : "n/a"}`;
+        return span;
+      }
+
+      subs.appendChild(pill("Delay", delay));
+      subs.appendChild(pill("Stagnation", stag));
+      subs.appendChild(pill("Velocity", vel));
+
+      const delayProb = document.createElement("div");
+      delayProb.style.fontSize = "0.75rem";
+      delayProb.style.color = "var(--muted)";
+      const dp = typeof result.delay_probability === "number" ? (result.delay_probability * 100).toFixed(0) : "?";
+      delayProb.textContent = `Delay probability: ${dp}%`;
+
+      right.appendChild(lvl);
+      right.appendChild(subs);
+      right.appendChild(delayProb);
+
+      summary.appendChild(ring);
+      summary.appendChild(right);
+
+      const rfEl = document.getElementById("risk-factors");
+      const raEl = document.getElementById("recommended-actions");
+      rfEl.innerHTML = "";
+      raEl.innerHTML = "";
+
+      (result.risk_factors || []).forEach((f) => {
+        const li = document.createElement("li");
+        li.textContent = f;
+        rfEl.appendChild(li);
+      });
+
+      (result.recommended_actions || []).forEach((a) => {
+        const li = document.createElement("li");
+        li.textContent = a;
+        raEl.appendChild(li);
+      });
+
+      const metadata = result.shipment_metadata || {};
+      document.getElementById("metadata-json").textContent =
+        Object.keys(metadata).length ? JSON.stringify(metadata, null, 2) : "No shipment metadata from agent.";
+    }
+
+    async function runRiskForSupplier(id, name) {
+      if (isRunning) return;
+      isRunning = true;
+      setStatus(`Running Shipment Agent for ${name}...`, "Running");
+      try {
+        const res = await fetch(`/shipping-risk/${id}`, { method: "POST" });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        renderRiskResult(data);
+        setStatus(`Shipment Agent complete for ${name}.`, "OK");
+      } catch (err) {
+        console.error(err);
+        setStatus("Failed to run Shipment Agent.", "Error");
+      } finally {
+        isRunning = false;
+      }
+    }
+
+    async function viewTrackingForSupplier(name) {
+      const awb = AWB_BY_SUPPLIER[name];
+      const timelineEl = document.getElementById("timeline");
+      const awbLabel = document.getElementById("tracking-awb");
+      timelineEl.innerHTML = "";
+      awbLabel.textContent = awb ? `AWB: ${awb}` : "No AWB mapping";
+      if (!awb) return;
+
+      try {
+        const res = await fetch(`/api/tracking/${awb}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const activities = (data.tracking_data && data.tracking_data.shipment_track_activities) || [];
+        if (!activities.length) {
+          timelineEl.textContent = "No tracking activities.";
+          return;
+        }
+        activities
+          .slice()
+          .sort((a, b) => new Date(a.date) - new Date(b.date))
+          .forEach((act) => {
+            const item = document.createElement("div");
+            item.className = "timeline-item";
+            item.innerHTML = `
+              <div class="timeline-dot"></div>
+              <div class="timeline-body">
+                <div><strong>${act.status}</strong> · ${act.activity}</div>
+                <div style="font-size:0.72rem;color:var(--muted);">${act.location}</div>
+                <span class="date">${act.date}</span>
+              </div>
+            `;
+            timelineEl.appendChild(item);
+          });
+      } catch (err) {
+        console.error(err);
+        timelineEl.textContent = "Failed to load tracking data.";
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadSuppliers();
+    });
+  </script>
+</body>
+
+</html>

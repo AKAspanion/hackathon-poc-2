@@ -10,7 +10,20 @@ from app.database import Base, engine
 # Import all models so they are registered with Base.metadata before create_all
 import app.models  # noqa: F401
 
-from app.api.routes import app_routes, oems, risks, opportunities, mitigation_plans, suppliers, agent, ws, weather_agent
+from app.api.routes import (
+    app_routes,
+    oems,
+    risks,
+    opportunities,
+    mitigation_plans,
+    suppliers,
+    agent,
+    ws,
+    weather_agent,
+    shipping_suppliers,
+    shipping_risk,
+    shipping_tracking,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,6 +46,11 @@ except Exception as e:
 async def lifespan(app: FastAPI):
     # No periodic scheduler: agent workflow is triggered explicitly
     # via the /agent/trigger endpoint from the frontend.
+    try:
+        from app.seed_shipping import seed_shipping_if_empty
+        seed_shipping_if_empty()
+    except Exception as e:
+        logger.warning("Shipping seed skipped (non-fatal): %s", e)
     yield
 
 
@@ -58,6 +76,9 @@ app.include_router(suppliers.router)
 app.include_router(agent.router)
 app.include_router(weather_agent.router)
 app.include_router(ws.router)
+app.include_router(shipping_suppliers.router)
+app.include_router(shipping_risk.router)
+app.include_router(shipping_tracking.router)
 
 
 if __name__ == "__main__":

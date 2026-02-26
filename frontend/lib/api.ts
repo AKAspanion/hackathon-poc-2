@@ -263,3 +263,59 @@ export const suppliersApi = {
   getById: (id: string) =>
     api.get<Supplier | null>(`/suppliers/${id}`).then((res) => res.data),
 };
+
+// Shipping Risk Intelligence (from hackathon POC)
+export interface ShippingSupplierItem {
+  id: number;
+  name: string;
+  material_name: string;
+  location_city: string | null;
+  destination_city: string;
+  latitude: number | null;
+  longitude: number | null;
+  shipping_mode: string;
+  distance_km: number | null;
+  avg_transit_days: number | null;
+  historical_delay_percentage: number | null;
+  port_used: string | null;
+  alternate_route_available: boolean;
+  is_critical_supplier: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShippingRiskResult {
+  shipping_risk_score: number;
+  risk_level: string;
+  delay_probability: number;
+  delay_risk_score?: number | null;
+  stagnation_risk_score?: number | null;
+  velocity_risk_score?: number | null;
+  risk_factors: string[];
+  recommended_actions: string[];
+  shipment_metadata?: Record<string, unknown> | null;
+}
+
+export interface TrackingActivity {
+  date: string;
+  status: string;
+  activity: string;
+  location: string;
+}
+
+export const shippingRiskApi = {
+  getSuppliers: () =>
+    api
+      .get<ShippingSupplierItem[]>("/shipping/suppliers/")
+      .then((res) => res.data),
+  runRisk: (supplierId: number) =>
+    api
+      .post<ShippingRiskResult>(`/shipping/shipping-risk/${supplierId}`)
+      .then((res) => res.data),
+  getTracking: (awbCode: string) =>
+    api
+      .get<{ tracking_data?: { shipment_track_activities?: TrackingActivity[] } }>(
+        `/shipping/tracking/${encodeURIComponent(awbCode)}`
+      )
+      .then((res) => res.data),
+};

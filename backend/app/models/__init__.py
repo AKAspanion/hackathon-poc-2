@@ -9,6 +9,9 @@ from app.models.external_api_log import ExternalApiLog
 from app.models.llm_log import LlmLog
 from app.models.workflow_run import WorkflowRun
 from app.models.supplier_risk_analysis import SupplierRiskAnalysis
+from app.models.shipping_supplier import ShippingSupplier
+from app.models.shipment import Shipment
+from app.models.shipping_risk_assessment import ShippingRiskAssessment
 
 __all__ = [
     "Oem",
@@ -28,4 +31,7 @@ __all__ = [
     "LlmLog",
     "WorkflowRun",
     "SupplierRiskAnalysis",
+    "ShippingSupplier",
+    "Shipment",
+    "ShippingRiskAssessment",
 ]

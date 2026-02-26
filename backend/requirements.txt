@@ -14,3 +14,4 @@ langgraph
 langchain-core
 langchain-anthropic
 langchain-ollama>=0.2.0
+openai>=1.0.0

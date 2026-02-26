@@ -17,6 +17,7 @@ import {
   ShipmentTimeline,
   ShipmentExposureSummary,
 } from '@/components/WeatherAgentComponents';
+import { ShippingRiskDashboard } from '@/components/ShippingRiskDashboard';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { agentApi, fetchWeatherRisk, fetchShipmentWeatherExposure } from '@/lib/api';
 import type {
@@ -26,7 +27,7 @@ import type {
 } from '@/lib/types';
 import { useWebSocketNotifications } from '@/hooks/useWebSocketNotifications';
 
-type Tab = 'dashboard' | 'weather';
+type Tab = 'dashboard' | 'weather' | 'shipping-risk';
 
 const today = new Date().toISOString().split('T')[0];
 
@@ -145,6 +146,17 @@ export default function Home() {
                 >
                   Weather & Shipment
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setTab('shipping-risk')}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                    tab === 'shipping-risk'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                  }`}
+                >
+                  Shipping Risk
+                </button>
               </div>
               <AppNav />
               {tab === 'dashboard' && (
@@ -177,6 +189,20 @@ export default function Home() {
             <MitigationPlansList />
           </div>
         </main>
+      )}
+
+      {tab === 'shipping-risk' && (
+        <div className="min-h-[calc(100vh-80px)]">
+          <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-2">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Shipping Risk Intelligence
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Manufacturing hub: Bangalore, India · Shipment Agent · LLM + Tracking
+            </p>
+          </div>
+          <ShippingRiskDashboard />
+        </div>
       )}
 
       {tab === 'weather' && (

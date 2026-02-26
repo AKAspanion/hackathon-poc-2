@@ -36,54 +36,45 @@ The project is split into two separate applications:
 
 ## 🚀 Quick Start
 
+**Detailed setup instructions** (prerequisites, database, env vars, scripts): see [docs/SETUP.md](docs/SETUP.md).
+
 ### Prerequisites
 
-- Node.js 20+
-- PostgreSQL 14+
-- npm or yarn
+- **Backend**: Python 3.11+ (3.12 recommended; 3.14 not yet supported), PostgreSQL 14+
+- **Frontend**: Node.js 20+, npm or yarn
 
 ### Backend Setup
 
 ```bash
 cd backend
 
-# Create and activate virtualenv
+# Option A: use the start script (creates venv, installs deps, ensures DB, runs server)
+./start.sh
+
+# Option B: manual setup
 python3 -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# Install dependencies
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-# Configure environment variables
 cp .env.example .env
-# Edit .env with your configuration:
-# - Database credentials
-# - ANTHROPIC_API_KEY (for AI analysis) or configure Ollama
-# - Optional: WEATHER_API_KEY, NEWS_API_KEY
-
-# Run the API
+# Edit .env: DB_*, LLM_PROVIDER + API keys, JWT_SECRET, etc. (see docs/SETUP.md)
+python ensure_db.py         # create DB if missing
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The backend will run on `http://localhost:8000`
+The backend runs on `http://localhost:8000`.
 
 ### Frontend Setup
 
 ```bash
 cd frontend
 
-# Install dependencies
 yarn install
-
-# Configure environment variables
 cp .env.example .env
-# Edit .env with backend URL (default: http://localhost:8000)
-
-# Run development server
+# Edit .env: set NEXT_PUBLIC_API_URL (default http://localhost:8000)
 yarn dev
 ```
 
-The frontend will run on `http://localhost:3000`
+The frontend runs on `http://localhost:3000`.
 
 ## 📊 Features
 
@@ -121,32 +112,10 @@ The frontend will run on `http://localhost:3000`
 
 ## 🔧 Configuration
 
-### Environment Variables
+Environment variables are documented in [docs/SETUP.md](docs/SETUP.md). Summary:
 
-#### Backend (`.env`)
-```env
-# Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_USERNAME=postgres
-DB_PASSWORD=postgres
-DB_NAME=supply_chain
-
-# API Keys
-ANTHROPIC_API_KEY=your_key_here
-WEATHER_API_KEY=your_key_here (optional)
-NEWS_API_KEY=your_key_here (optional)
-
-# Application
-PORT=8000
-NODE_ENV=development
-FRONTEND_URL=http://localhost:3000
-```
-
-#### Frontend (`.env`)
-```env
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
+- **Backend** (`backend/.env`): copy from `backend/.env.example`. Covers database (`DB_*`), LLM (`LLM_PROVIDER`, `ANTHROPIC_*`, `OLLAMA_*`, `OPENAI_*`), API keys (`WEATHER_API_KEY`, `NEWS_API_KEY`), JWT (`JWT_SECRET`, `JWT_ALGORITHM`, `JWT_EXPIRE_DAYS`), trend agent (`TREND_AGENT_*`), and app (`PORT`, `ENV`, `FRONTEND_URL`).
+- **Frontend** (`frontend/.env`): copy from `frontend/.env.example`. Set `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`).
 
 ## 📡 API Endpoints
 
@@ -179,9 +148,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ### Backend
 ```bash
 cd backend
-yarn start:dev    # Development with hot reload
-yarn build        # Production build
-yarn start:prod   # Production mode
+./start.sh        # Dev with hot reload (or: source .venv/bin/activate && uvicorn main:app --reload --port 8000)
+# No yarn scripts; use uvicorn for production: uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 ### Frontend
@@ -194,6 +162,8 @@ yarn start        # Production server
 
 ## 📁 Project Structure
 
+See [docs/APP-ARCHITECTURE.md](docs/APP-ARCHITECTURE.md) for a full overview. Summary:
+
 ```
 hackathon-2/
 ├── backend/
@@ -204,13 +174,20 @@ hackathon-2/
 │   │   ├── schemas/            # Pydantic schemas
 │   │   ├── config.py           # Settings (env-backed)
 │   │   └── database.py         # DB session / engine
-│   ├── requirements.txt
-│   └── README.md
+│   ├── .env.example            # Backend env template
+│   ├── ensure_db.py            # Create PostgreSQL DB if missing
+│   ├── start.sh                # One-command backend start
+│   └── requirements.txt
 ├── frontend/
-│   ├── app/                    # Next.js app directory
+│   ├── app/                    # Next.js App Router
 │   ├── components/             # React components
-│   ├── lib/                    # Utilities and API client
-│   └── public/                 # Static assets
+│   ├── lib/                    # API client, constants, providers
+│   ├── .env.example            # Frontend env template
+│   └── public/
+├── docs/
+│   ├── SETUP.md                # Setup guide (backend + frontend)
+│   ├── APP-ARCHITECTURE.md     # Application architecture
+│   └── DB-ARCHITECTURE.md      # Database schema and relations
 └── README.md
 ```
 

@@ -12,6 +12,7 @@ from app.models.supplier_risk_analysis import SupplierRiskAnalysis
 from app.models.shipping_supplier import ShippingSupplier
 from app.models.shipment import Shipment
 from app.models.shipping_risk_assessment import ShippingRiskAssessment
+from app.models.trend_insight import TrendInsight
 
 __all__ = [
     "Oem",
@@ -34,4 +35,5 @@ __all__ = [
     "ShippingSupplier",
     "Shipment",
     "ShippingRiskAssessment",
+    "TrendInsight",
 ]

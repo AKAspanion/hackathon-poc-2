@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import settings
 from app.database import Base, engine
@@ -23,6 +24,7 @@ from app.api.routes import (
     shipping_suppliers,
     shipping_risk,
     shipping_tracking,
+    trend_insights,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -42,16 +44,48 @@ except Exception as e:
     )
 
 
+def _scheduled_trend_insights_job():
+    if not settings.trend_agent_enabled:
+        return
+    from app.database import SessionLocal
+    from app.services.trend_orchestrator import run_trend_insights_cycle
+    db = SessionLocal()
+    try:
+        logger.info("Scheduled trend-insights cycle starting…")
+        run_trend_insights_cycle(db)
+        logger.info("Scheduled trend-insights cycle complete.")
+    except Exception as e:
+        logger.exception("Scheduled trend-insights cycle failed: %s", e)
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # No periodic scheduler: agent workflow is triggered explicitly
-    # via the /agent/trigger endpoint from the frontend.
+    # Optional: trend-insights scheduler when trend_agent_enabled is True
+    scheduler = None
+    if settings.trend_agent_enabled:
+        scheduler = BackgroundScheduler()
+        interval = max(1, settings.trend_agent_interval_minutes)
+        scheduler.add_job(
+            _scheduled_trend_insights_job,
+            "interval",
+            minutes=interval,
+            id="trend_insights_cycle",
+        )
+        scheduler.start()
+        logger.info(
+            "Trend-insights scheduler started (interval=%d minutes)", interval
+        )
+    # Seed shipping data if empty
     try:
         from app.seed_shipping import seed_shipping_if_empty
         seed_shipping_if_empty()
     except Exception as e:
         logger.warning("Shipping seed skipped (non-fatal): %s", e)
     yield
+    if scheduler:
+        scheduler.shutdown()
 
 
 app = FastAPI(
@@ -79,6 +113,7 @@ app.include_router(ws.router)
 app.include_router(shipping_suppliers.router)
 app.include_router(shipping_risk.router)
 app.include_router(shipping_tracking.router)
+app.include_router(trend_insights.router)
 
 
 if __name__ == "__main__":

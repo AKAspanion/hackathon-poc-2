@@ -16,11 +16,17 @@ class Settings(BaseSettings):
     ollama_model: str = "llama3"
 
     openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
     openai_base_url: str | None = None
 
     weather_api_key: str | None = None
     weather_days_forecast: int = 3
     news_api_key: str | None = None
+
+    # Trend insights agent
+    trend_agent_enabled: bool = False
+    trend_agent_interval_minutes: int = 60
+    trend_agent_excel_path: str | None = None
 
     jwt_secret: str = "dev-secret-change-in-production"
     jwt_algorithm: str = "HS256"

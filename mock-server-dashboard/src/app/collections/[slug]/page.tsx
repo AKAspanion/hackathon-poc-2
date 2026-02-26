@@ -134,7 +134,7 @@ export default function CollectionDetailPage({ params }: PageProps) {
           <input
             id="query-input"
             type="text"
-            placeholder="e.g. name:detroit or name.city:detroit"
+            placeholder="e.g. name:detroit, name.city:detroit, cities.0:detroit, tags.*:js, weather.[].result.main:Clouds"
             value={queryInput}
             onChange={(e) => setQueryInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleApplyQuery()}

@@ -3,24 +3,100 @@ import type { ListOptions } from "../types";
 
 const PATH_SEGMENT_REGEX = /^[a-zA-Z0-9_]+$/;
 
+/** Path with ".*" at the end means "array contains value" (e.g. cities.*:detroit). */
+const ARRAY_CONTAINS_SUFFIX = ".*";
+
+/** Segment used to indicate \"any element of array\" (e.g. weather.[].result.main). */
+const ARRAY_ANY_SEGMENT = "[]";
+
+interface PathCondition {
+  /** Either a JSON path expression (to be wrapped) or a full boolean SQL condition. */
+  sql: string;
+  /** When true, sql is a complete condition that already compares against $2. */
+  isFullCondition: boolean;
+  /** When true (and not full), use @> to_jsonb($2::text) instead of = $2. */
+  useContainsOperator: boolean;
+}
+
 /**
- * Builds a safe SQL expression for JSON path comparison, e.g. data->'name'->>'city'.
- * Path uses object path notation (e.g. "name" or "name.city").
+ * Builds a safe SQL expression / condition for JSON path comparison.
+ *
+ * Supports:
+ * - Object path: name, name.city → data->>'name', data->'name'->>'city'
+ * - Array index: cities.0 → data->'cities'->>'0' (first element)
+ * - Array contains (primitive): cities.* → data->'cities' @> to_jsonb($2::text)
+ * - Any element in array has nested key equal to value:
+ *   weather.[].result.main → EXISTS (SELECT 1 FROM jsonb_array_elements(data->'weather') elem WHERE elem->'result'->>'main' = $2)
  */
-function buildDataPathSql(path: string): string {
-  const segments = path.split(".").filter(Boolean);
+function buildDataPathCondition(path: string): PathCondition {
+  const arrayContains = path.endsWith(ARRAY_CONTAINS_SUFFIX);
+  const pathToUse = arrayContains ? path.slice(0, -ARRAY_CONTAINS_SUFFIX.length) : path;
+  const segments = pathToUse.split(".").filter(Boolean);
   if (segments.length === 0) throw new Error("Query path cannot be empty");
+
+  const anyIndex = segments.indexOf(ARRAY_ANY_SEGMENT);
+  if (anyIndex !== -1) {
+    if (arrayContains) {
+      throw new Error("Path cannot use both [] and .* in the same query");
+    }
+    // Only support a single [] for now.
+    if (segments.indexOf(ARRAY_ANY_SEGMENT, anyIndex + 1) !== -1) {
+      throw new Error("Path can contain at most one [] segment");
+    }
+  }
+
   for (const seg of segments) {
+    if (seg === ARRAY_ANY_SEGMENT) continue;
     if (!PATH_SEGMENT_REGEX.test(seg)) {
       throw new Error(`Invalid query path segment: ${seg}`);
     }
   }
+
+  // Any-element-of-array semantics via [].
+  if (anyIndex !== -1) {
+    const before = segments.slice(0, anyIndex);
+    const after = segments.slice(anyIndex + 1);
+    if (after.length === 0) {
+      throw new Error("Path with [] must have a nested key after []");
+    }
+
+    const escape = (s: string) => `'${s.replace(/'/g, "''")}'`;
+
+    // data->'weather' or just data if path starts with [].
+    const beforeEscaped = before.map(escape);
+    const arrayExpr =
+      beforeEscaped.length === 0
+        ? "data"
+        : `data->${beforeEscaped.join("->")}`;
+
+    const afterEscaped = after.map(escape);
+    const valueExpr =
+      afterEscaped.length === 1
+        ? `elem->>${afterEscaped[0]}`
+        : `elem->${afterEscaped.slice(0, -1).join("->")}->>${
+            afterEscaped[afterEscaped.length - 1]
+          }`;
+
+    const sql = `EXISTS (SELECT 1 FROM jsonb_array_elements(${arrayExpr}) AS elem WHERE ${valueExpr} = $2)`;
+    return { sql, isFullCondition: true, useContainsOperator: false };
+  }
+
+  // Primitive array contains via .* suffix.
+  if (arrayContains) {
+    const escaped = segments.map((s) => `'${s.replace(/'/g, "''")}'`);
+    const pathSql = `data->${escaped.join("->")}`;
+    return { sql: pathSql, isFullCondition: false, useContainsOperator: true };
+  }
+
+  // Simple equality on scalar value.
   const escaped = segments.map((s) => `'${s.replace(/'/g, "''")}'`);
   const pathSql =
     escaped.length === 1
       ? `data->>${escaped[0]}`
-      : `data->${escaped.slice(0, -1).join("->")}->>${escaped[escaped.length - 1]}`;
-  return pathSql;
+      : `data->${escaped.slice(0, -1).join("->")}->>${
+          escaped[escaped.length - 1]
+        }`;
+  return { sql: pathSql, isFullCondition: false, useContainsOperator: false };
 }
 
 export async function listRecords(
@@ -42,9 +118,16 @@ export async function listRecords(
     return { rows, total };
   }
 
-  const pathSql = buildDataPathSql(query.path);
+  const { sql, isFullCondition, useContainsOperator } = buildDataPathCondition(
+    query.path
+  );
+  const condition = isFullCondition
+    ? sql
+    : useContainsOperator
+      ? `${sql} @> to_jsonb($2::text)`
+      : `${sql} = $2`;
   const countResult = await prisma.$queryRawUnsafe<[{ count: bigint }]>(
-    `SELECT COUNT(*)::bigint as count FROM "Record" WHERE "collectionId" = $1 AND ${pathSql} = $2`,
+    `SELECT COUNT(*)::bigint as count FROM "Record" WHERE "collectionId" = $1 AND ${condition}`,
     collectionId,
     query.value
   );
@@ -58,7 +141,7 @@ export async function listRecords(
       updatedAt: Date;
     }>
   >(
-    `SELECT * FROM "Record" WHERE "collectionId" = $1 AND ${pathSql} = $2 ORDER BY "createdAt" DESC LIMIT $3 OFFSET $4`,
+    `SELECT * FROM "Record" WHERE "collectionId" = $1 AND ${condition} ORDER BY "createdAt" DESC LIMIT $3 OFFSET $4`,
     collectionId,
     query.value,
     options.limit,

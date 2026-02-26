@@ -48,8 +48,10 @@ class Risk(Base):
     sourceType = Column(String, nullable=False)
     sourceData = Column(JSONB, nullable=True)
     affectedRegion = Column(String, nullable=True)
-    # Human-readable supplier name(s) from the LLM output (for display/trace).
+    # Primary human-readable supplier label (usually the first match).
     affectedSupplier = Column(String, nullable=True)
+    # Optional list of all supplier names this risk impacts.
+    affectedSuppliers = Column(JSONB, nullable=True)
     estimatedImpact = Column(String, nullable=True)
     estimatedCost = Column(Numeric(10, 2), nullable=True)
 

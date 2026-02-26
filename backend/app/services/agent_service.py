@@ -517,10 +517,19 @@ async def _run_analysis_for_oem(
     # 5. Mitigation plans by supplier
     risks_by_supplier: dict[str, list[Risk]] = {}
     for risk in all_risks:
-        key = (risk.affectedSupplier or "").strip()
-        if not key:
-            continue
-        risks_by_supplier.setdefault(key, []).append(risk)
+        names: list[str] = []
+        if getattr(risk, "affectedSuppliers", None):
+            names = [
+                (str(n).strip())
+                for n in (risk.affectedSuppliers or [])
+                if str(n).strip()
+            ]
+        elif risk.affectedSupplier:
+            names = [risk.affectedSupplier.strip()]
+        for key in names:
+            if not key:
+                continue
+            risks_by_supplier.setdefault(key, []).append(risk)
     combined_plans_created = 0
     for supplier_name, risk_list in risks_by_supplier.items():
         plan_data = await generate_combined_mitigation_plan(
@@ -576,12 +585,21 @@ async def _run_analysis_for_oem(
         )
         if plans > 0:
             continue
+        # For per-risk plans, include all affected suppliers as a
+        # comma-separated label for readability in the prompt.
+        aff_label = None
+        if getattr(risk, "affectedSuppliers", None):
+            aff_label = ", ".join(
+                [str(n).strip() for n in (risk.affectedSuppliers or []) if str(n).strip()]
+            ) or None
+        if not aff_label:
+            aff_label = risk.affectedSupplier
         plan_data = await generate_mitigation_plan({
             "title": risk.title,
             "description": risk.description,
             "severity": getattr(risk.severity, "value", risk.severity),
             "affectedRegion": risk.affectedRegion,
-            "affectedSupplier": risk.affectedSupplier,
+            "affectedSupplier": aff_label,
         })
         create_plan_from_dict(
             db,

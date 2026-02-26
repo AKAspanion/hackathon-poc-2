@@ -38,6 +38,9 @@ def get_one(db: Session, id: UUID) -> Risk | None:
 
 
 def create_risk(db: Session, dto: CreateRisk) -> Risk:
+    affected_suppliers = (
+        [dto.affectedSupplier] if getattr(dto, "affectedSupplier", None) else None
+    )
     risk = Risk(
         title=dto.title,
         description=dto.description,
@@ -47,6 +50,7 @@ def create_risk(db: Session, dto: CreateRisk) -> Risk:
         sourceData=dto.sourceData,
         affectedRegion=dto.affectedRegion,
         affectedSupplier=dto.affectedSupplier,
+        affectedSuppliers=affected_suppliers,
         estimatedImpact=dto.estimatedImpact,
         estimatedCost=dto.estimatedCost,
     )
@@ -128,6 +132,27 @@ def create_risk_from_dict(
         data.get("affectedSupplier"),
     )
 
+    raw_aff = data.get("affectedSupplier")
+    suppliers_list: list[str] | None = None
+    primary_name: str | None = None
+    if isinstance(raw_aff, (list, tuple)):
+        names = [str(x).strip() for x in raw_aff if str(x).strip()]
+        suppliers_list = names or None
+        primary_name = names[0] if names else None
+    elif raw_aff:
+        name_str = str(raw_aff).strip()
+        if name_str:
+            suppliers_list = [name_str]
+            primary_name = name_str
+    # Prefer the resolved supplier_name as the canonical label when available.
+    if supplier_name:
+        primary_name = supplier_name
+        if suppliers_list:
+            if supplier_name not in suppliers_list:
+                suppliers_list.insert(0, supplier_name)
+        else:
+            suppliers_list = [supplier_name]
+
     risk = Risk(
         title=data["title"],
         description=data["description"],
@@ -136,7 +161,8 @@ def create_risk_from_dict(
         sourceType=data.get("sourceType", "unknown"),
         sourceData=data.get("sourceData"),
         affectedRegion=data.get("affectedRegion"),
-        affectedSupplier=supplier_name or data.get("affectedSupplier"),
+        affectedSupplier=primary_name,
+        affectedSuppliers=suppliers_list,
         estimatedImpact=data.get("estimatedImpact"),
         estimatedCost=_sanitize_numeric(data.get("estimatedCost")),
         oemId=oem_id,

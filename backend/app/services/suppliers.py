@@ -130,24 +130,37 @@ def get_risks_by_supplier(db: Session) -> dict:
         Risk.title,
         Risk.severity,
         Risk.affectedSupplier,
+        Risk.affectedSuppliers,
         Risk.createdAt,
     ).order_by(Risk.createdAt.desc()).all()
     out: Dict[str, dict] = {}
     for r in risks:
-        key = (r.affectedSupplier or "").strip()
-        if not key:
-            continue
-        if key not in out:
-            out[key] = {"count": 0, "bySeverity": {}, "latest": None}
-        out[key]["count"] += 1
-        sev = str(r.severity.value if hasattr(r.severity, "value") else r.severity)
-        out[key]["bySeverity"][sev] = out[key]["bySeverity"].get(sev, 0) + 1
-        if out[key]["latest"] is None:
-            out[key]["latest"] = {
-                "id": str(r.id),
-                "severity": sev,
-                "title": r.title,
-            }
+        # Support multiple suppliers per risk; fall back to single label.
+        names: list[str] = []
+        if getattr(r, "affectedSuppliers", None):
+            names = [
+                (str(n).strip())
+                for n in (r.affectedSuppliers or [])
+                if str(n).strip()
+            ]
+        elif r.affectedSupplier:
+            names = [r.affectedSupplier.strip()]
+        for key in names:
+            if not key:
+                continue
+            if key not in out:
+                out[key] = {"count": 0, "bySeverity": {}, "latest": None}
+            out[key]["count"] += 1
+            sev = str(
+                r.severity.value if hasattr(r.severity, "value") else r.severity
+            )
+            out[key]["bySeverity"][sev] = out[key]["bySeverity"].get(sev, 0) + 1
+            if out[key]["latest"] is None:
+                out[key]["latest"] = {
+                    "id": str(r.id),
+                    "severity": sev,
+                    "title": r.title,
+                }
     return out
 
 
@@ -338,10 +351,19 @@ def get_swarm_summaries_by_supplier(
 
     grouped: Dict[str, List[Risk]] = {}
     for r in risks:
-        key = (r.affectedSupplier or "").strip()
-        if not key:
-            continue
-        grouped.setdefault(key, []).append(r)
+        names: list[str] = []
+        if getattr(r, "affectedSuppliers", None):
+            names = [
+                (str(n).strip())
+                for n in (r.affectedSuppliers or [])
+                if str(n).strip()
+            ]
+        elif r.affectedSupplier:
+            names = [r.affectedSupplier.strip()]
+        for key in names:
+            if not key:
+                continue
+            grouped.setdefault(key, []).append(r)
 
     out: Dict[str, dict] = {}
     for supplier_name, supplier_risks in grouped.items():

@@ -471,7 +471,7 @@ Data:
 Return ONLY a valid JSON object:
 {{
   "risks": [
-    {{ "title": "...", "description": "...", "severity": "low|medium|high|critical", "affectedRegion": "...", "affectedSupplier": "...", "estimatedImpact": "...", "estimatedCost": 0 }}
+    {{ "title": "...", "description": "...", "severity": "low|medium|high|critical", "affectedRegion": "...", "affectedSupplier": "Single supplier name or array of supplier names", "estimatedImpact": "...", "estimatedCost": 0 }}
   ],
   "opportunities": [
     {{ "title": "...", "description": "...", "type": "cost_saving|time_saving|quality_improvement|market_expansion|supplier_diversification", "affectedRegion": "...", "potentialBenefit": "...", "estimatedValue": 0 }}

@@ -124,13 +124,42 @@ class BaseLLMAdapter:
         return response
 
     async def generate_insights(self, ctx: TrendContext) -> list[Insight]:
-        prompt = _build_insights_prompt(ctx)
+        """Run three focused LLM calls concurrently — one per scope — and merge results."""
+        material_ctx = _ScopedContext("material", ctx)
+        supplier_ctx = _ScopedContext("supplier", ctx)
+        global_ctx   = _ScopedContext("global",   ctx)
+
+        import asyncio
+        results = await asyncio.gather(
+            self._invoke_scope(material_ctx),
+            self._invoke_scope(supplier_ctx),
+            self._invoke_scope(global_ctx),
+            return_exceptions=True,
+        )
+
+        insights: list[Insight] = []
+        scopes = ("material", "supplier", "global")
+        for scope, result in zip(scopes, results):
+            if isinstance(result, BaseException):
+                logger.warning("Scope '%s' call failed: %s – using mock for that scope", scope, result)
+                insights.extend(_mock_insights_for_scope(scope, ctx))
+            else:
+                insights.extend(result)
+
+        if not insights:
+            insights = _mock_insights(ctx)
+        return insights
+
+    async def _invoke_scope(self, scoped: "_ScopedContext") -> list[Insight]:
+        prompt = _build_scope_prompt(scoped)
         try:
             raw = await self.invoke(prompt)
-            return _parse_insights(raw)
+            parsed = _parse_insights(raw)
+            if parsed:
+                return parsed
         except Exception as exc:
-            logger.exception("generate_insights failed: %s – using mock", exc)
-            return _mock_insights(ctx)
+            logger.exception("Scope '%s' LLM call failed: %s", scoped.scope, exc)
+        return _mock_insights_for_scope(scoped.scope, scoped.ctx)
 
 
 # ── Anthropic adapter ─────────────────────────────────────────────────
@@ -249,62 +278,83 @@ def reset_llm_client() -> None:
     _cached_client = None
 
 
-# ── Prompt builder ────────────────────────────────────────────────────
+# ── Scoped context (one per parallel call) ────────────────────────────
 
-def _build_insights_prompt(ctx: TrendContext) -> str:
-    supplier_names = [s.get("name", "") for s in ctx.suppliers[:10]]
-    material_names = [m.get("material_name", "") for m in ctx.materials[:10]]
-    global_rows = [g.get("macro_trend", "") for g in ctx.global_context[:10]]
+@dataclass
+class _ScopedContext:
+    scope: str          # "material" | "supplier" | "global"
+    ctx: TrendContext
 
-    material_items = [t for t in ctx.trend_items if t.level == "material"]
-    supplier_items = [t for t in ctx.trend_items if t.level == "supplier"]
-    global_items = [t for t in ctx.trend_items if t.level == "global"]
 
-    def fmt_items(items: list[TrendItem]) -> str:
-        if not items:
-            return "  (none)"
-        return "\n".join(
-            f"  [{i+1}] {it.title} | {it.source} | {it.published_at[:10]}\n"
-            f"       {it.summary[:200]}"
-            for i, it in enumerate(items[:6])
-        )
+# ── Per-scope prompt builders ─────────────────────────────────────────
+
+def _fmt_trend_items(items: list[TrendItem], limit: int = 6) -> str:
+    if not items:
+        return "  (none)"
+    return "\n".join(
+        f"  [{i+1}] {it.title} | {it.source} | {it.published_at[:10]}\n"
+        f"       {it.summary[:200]}"
+        for i, it in enumerate(items[:limit])
+    )
+
+
+def _build_scope_prompt(scoped: _ScopedContext) -> str:
+    ctx = scoped.ctx
+    scope = scoped.scope
+
+    oem = ctx.oem_name or "Unnamed Manufacturer"
+    supplier_names = ", ".join(s.get("name", "") for s in ctx.suppliers[:10]) or "N/A"
+    material_names = ", ".join(m.get("material_name", "") for m in ctx.materials[:10]) or "N/A"
+    global_rows    = "; ".join(g.get("macro_trend", "") for g in ctx.global_context[:5]) or "N/A"
+
+    trend_items = [t for t in ctx.trend_items if t.level == scope]
+    news_block  = _fmt_trend_items(trend_items)
+
+    if scope == "material":
+        entities   = material_names
+        focus_line = "Focus exclusively on MATERIAL-level risks and opportunities (prices, shortages, substitutes, lead times)."
+        count      = "3-4"
+    elif scope == "supplier":
+        entities   = supplier_names
+        focus_line = "Focus exclusively on SUPPLIER-level risks and opportunities (delivery reliability, geopolitics, capacity, financial health)."
+        count      = "3-4"
+    else:
+        entities   = global_rows
+        focus_line = "Focus exclusively on GLOBAL macro-level risks and opportunities (trade policy, freight, regulation, climate, geopolitics)."
+        count      = "2-3"
 
     return f"""You are a predictive supply chain intelligence agent for a manufacturer.
 
 === MANUFACTURER CONTEXT ===
-OEM: {ctx.oem_name or 'Unnamed Manufacturer'}
-Key Suppliers: {', '.join(supplier_names) or 'N/A'}
-Key Materials: {', '.join(material_names) or 'N/A'}
-Known Global Macro Trends: {'; '.join(global_rows[:5]) or 'N/A'}
+OEM: {oem}
+Key Suppliers: {supplier_names}
+Key Materials: {material_names}
+Known Global Macro Trends: {global_rows}
 
-=== CURRENT TREND SIGNALS ===
+=== SCOPE: {scope.upper()} ===
+Relevant entities: {entities}
 
-[MATERIAL-LEVEL NEWS]
-{fmt_items(material_items)}
-
-[SUPPLIER-LEVEL NEWS]
-{fmt_items(supplier_items)}
-
-[GLOBAL-LEVEL NEWS]
-{fmt_items(global_items)}
+=== {scope.upper()}-LEVEL NEWS SIGNALS ===
+{news_block}
 
 === TASK ===
-Based on ALL of the above, generate 6-10 predictive and actionable insights for this manufacturer.
-Cover at least 2 insights per scope (material, supplier, global).
-For each insight return a JSON object with these exact keys:
-  scope            – one of: material | supplier | global
-  entity_name      – the specific material, supplier name, or "Global"
-  risk_opportunity – one of: risk | opportunity
-  title            – short headline (max 12 words)
-  description      – 2-3 sentence explanation grounded in the news above
-  predicted_impact – quantified or qualified impact statement
-  time_horizon     – one of: short-term | medium-term | long-term
-  severity         – one of: low | medium | high | critical
+{focus_line}
+Generate {count} predictive, actionable insights for scope="{scope}" only.
+
+Return ONLY a JSON array. Each element must have exactly these keys:
+  scope            – "{scope}"
+  entity_name      – specific material name, supplier name, or "Global"
+  risk_opportunity – "risk" | "opportunity"
+  title            – headline max 12 words
+  description      – 2-3 sentences grounded in the news above
+  predicted_impact – quantified impact (%, days, $)
+  time_horizon     – "short-term" | "medium-term" | "long-term"
+  severity         – "low" | "medium" | "high" | "critical"
   recommended_actions – array of 3-5 specific action strings
-  confidence       – float between 0.5 and 0.95
+  confidence       – float 0.5–0.95
   source_articles  – array of article titles used as evidence
 
-Return ONLY a JSON array of insight objects. No prose, no markdown fences."""
+No prose, no markdown fences. JSON array only."""
 
 
 # ── Response parser ───────────────────────────────────────────────────
@@ -348,6 +398,11 @@ def _parse_insights(raw: str) -> list[Insight]:
 
 
 # ── Rule-based mock insights ──────────────────────────────────────────
+
+def _mock_insights_for_scope(scope: str, ctx: TrendContext) -> list[Insight]:
+    """Return only the mock insights for a single scope."""
+    return [i for i in _mock_insights(ctx) if i.scope == scope]
+
 
 def _mock_insights(ctx: TrendContext) -> list[Insight]:
     """Generate deterministic insights from Excel data without calling an LLM."""

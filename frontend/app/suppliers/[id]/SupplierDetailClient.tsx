@@ -111,7 +111,7 @@ export function SupplierDetailClient({ id }: SupplierDetailClientProps) {
                 </span>
               </div>
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                Computed from weather, shipping, and news agents.
+                Computed from Weather, Shipment, and News agents coordinated by the Orchestration Agent.
               </p>
             </>
           ) : (

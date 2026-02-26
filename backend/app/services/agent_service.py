@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 from datetime import datetime
 from uuid import UUID
 
@@ -20,15 +21,15 @@ from app.services.risks import create_risk_from_dict
 from app.services.opportunities import create_opportunity_from_dict
 from app.services.mitigation_plans import create_plan_from_dict
 from app.services.agent_orchestrator import (
-    analyze_data,
-    analyze_global_risk,
-    analyze_shipping_disruptions,
     generate_mitigation_plan,
     generate_combined_mitigation_plan,
     generate_opportunity_plan,
 )
 from app.services.agent_types import OemScope
 from app.services.data_sources.manager import get_data_source_manager
+from app.services.weather_agent_graph import run_weather_agent_graph
+from app.services.news_agent_graph import run_news_agent_graph
+from app.services.shipment_agent_graph import run_shipment_agent_graph
 from app.services.websocket_manager import (
     broadcast_agent_status,
     broadcast_suppliers_snapshot,
@@ -36,10 +37,20 @@ from app.services.websocket_manager import (
 
 logger = logging.getLogger(__name__)
 
-# Severity weights for risk score (0-100). Critical=4, high=3, medium=2, low=1.
+# Base severity weights for individual risks.
 SEVERITY_WEIGHT = {"critical": 4, "high": 3, "medium": 2, "low": 1}
-# 40 weighted points => score 100 (e.g. 10 critical or 40 low).
-RISK_SCORE_SCALE = 100 / 40  # 2.5
+
+# Domain weights let us emphasize certain risk sources in aggregation.
+DOMAIN_WEIGHTS = {
+    "weather": 1.0,
+    "shipping": 1.3,
+    "news": 1.1,
+}
+
+# Controls the curvature of the non-linear escalation function:
+# score = 100 * (1 - exp(-base_weight / RISK_SCORE_CURVE_K))
+RISK_SCORE_CURVE_K = 12.0
+
 _is_running = False
 
 
@@ -222,25 +233,62 @@ def _build_global_news_params() -> dict:
 
 def _compute_risk_score(risks: list) -> tuple[float, dict, dict]:
     """
-    Compute a risk score between 0 and 100 from detected risks.
-    Uses severity weights (critical=4, high=3, medium=2, low=1); 40 weighted
-    points map to 100 (e.g. 10 critical or 40 low). No risks => 0.
+    Risk Analysis Agent:
+
+    - Normalize all risks onto a 0–100 scale using severity and domain weights.
+    - Apply a non-linear escalation curve so many medium risks escalate faster
+      than a simple linear sum.
+    - Track per-severity counts and per-sourceType weighted contributions.
     """
     severity_counts: dict[str, int] = {}
     breakdown: dict[str, float] = {}
-    weighted_sum = 0.0
+    base_weight = 0.0
     for r in risks:
         sev = (getattr(r.severity, "value", r.severity) or "medium").lower()
         severity_counts[sev] = severity_counts.get(sev, 0) + 1
-        w = SEVERITY_WEIGHT.get(sev, 2)
-        weighted_sum += w
+        sev_weight = SEVERITY_WEIGHT.get(sev, 2)
+
         src = (r.sourceType or "other")
-        breakdown[src] = breakdown.get(src, 0) + w
-    # Score 0-100: 0 when no risks, else min(100, weighted_sum * scale).
+        domain_weight = DOMAIN_WEIGHTS.get(src, 1.0)
+
+        # Risk-pointer aware nudges based on richer sourceData.
+        # Shipping: escalate when delay/stagnation metrics are critical.
+        pointer_boost = 1.0
+        src_data = getattr(r, "sourceData", None) or {}
+        if src == "shipping":
+            metrics = (src_data or {}).get("riskMetrics") or {}
+            delay = (metrics.get("delay_risk") or {}).get("label")
+            stagnation = (metrics.get("stagnation_risk") or {}).get("label")
+            if delay == "critical" or stagnation == "critical":
+                pointer_boost = 1.5
+            elif delay == "high" or stagnation == "high":
+                pointer_boost = 1.25
+        elif src == "weather":
+            exposure = (
+                (src_data or {}).get("weatherExposure") or {}
+            ).get("weather_exposure_score")
+            if isinstance(exposure, (int, float)):
+                if exposure >= 80:
+                    pointer_boost = 1.4
+                elif exposure >= 60:
+                    pointer_boost = 1.2
+        elif src == "news":
+            risk_type = (src_data or {}).get("risk_type")
+            if risk_type in {"factory_shutdown", "bankruptcy_risk", "sanction_risk"}:
+                pointer_boost = 1.3
+
+        weight = sev_weight * domain_weight * pointer_boost
+        base_weight += weight
+        breakdown[src] = breakdown.get(src, 0.0) + weight
+
+    # Score 0-100 using a saturating escalation curve. No risks => 0.
     overall = (
         0.0
         if not risks
-        else min(100.0, round(weighted_sum * RISK_SCORE_SCALE, 2))
+        else round(
+            100.0 * (1.0 - math.exp(-base_weight / RISK_SCORE_CURVE_K)),
+            2,
+        )
     )
     return overall, breakdown, severity_counts
 
@@ -378,7 +426,9 @@ async def _run_analysis_for_oem(
     )
     await _broadcast_current_status(db, agent_status_id)
     supplier_params = _build_data_source_params(scope)
-    supplier_data = await manager.fetch_by_types(["weather", "news"], supplier_params)
+    supplier_data = await manager.fetch_by_types(
+        ["weather", "news"], supplier_params
+    )
     logger.info(
         "_run_analysis_for_oem: supplier data fetched "
         "weather=%d news=%d for OEM %s",
@@ -389,16 +439,31 @@ async def _run_analysis_for_oem(
     _update_status(
         db,
         AgentStatus.ANALYZING.value,
-        f"Analyzing for OEM: {scope['oemName']}",
+        f"Analyzing weather & news for OEM: {scope['oemName']}",
         agent_status_id,
     )
     await _broadcast_current_status(db, agent_status_id)
-    supplier_analysis = await analyze_data(supplier_data, scope)
+
+    weather_only = {"weather": supplier_data.get("weather") or []}
+    news_only = {"news": supplier_data.get("news") or []}
+
+    weather_result = await run_weather_agent_graph(weather_only, scope)
+    news_result = await run_news_agent_graph(
+        news_only, scope, context="supplier"
+    )
+
+    combined_risks = (weather_result.get("risks") or []) + (
+        news_result.get("risks") or []
+    )
+    combined_opps = (weather_result.get("opportunities") or []) + (
+        news_result.get("opportunities") or []
+    )
+
     logger.info(
         "_run_analysis_for_oem: supplier analysis results "
         "risks=%d opportunities=%d for OEM %s",
-        len(supplier_analysis.get("risks") or []),
-        len(supplier_analysis.get("opportunities") or []),
+        len(combined_risks),
+        len(combined_opps),
         scope["oemName"],
     )
     _update_status(
@@ -408,10 +473,10 @@ async def _run_analysis_for_oem(
         agent_status_id,
     )
     await _broadcast_current_status(db, agent_status_id)
-    for r in supplier_analysis["risks"]:
+    for r in combined_risks:
         r["oemId"] = oem_id
         create_risk_from_dict(db, r, agent_status_id=agent_status_id)
-    for o in supplier_analysis["opportunities"]:
+    for o in combined_opps:
         o["oemId"] = oem_id
         create_opportunity_from_dict(db, o, agent_status_id=agent_status_id)
 
@@ -427,8 +492,12 @@ async def _run_analysis_for_oem(
         agent_status_id,
     )
     await _broadcast_current_status(db, agent_status_id)
-    global_data = await manager.fetch_by_types(["news"], _build_global_news_params())
-    global_result = await analyze_global_risk(global_data)
+    global_data = await manager.fetch_by_types(
+        ["news"], _build_global_news_params()
+    )
+    global_result = await run_news_agent_graph(
+        global_data, scope, context="global"
+    )
     logger.info(
         "_run_analysis_for_oem: global news analysis risks=%d for OEM %s",
         len(global_result.get("risks") or []),
@@ -450,8 +519,12 @@ async def _run_analysis_for_oem(
     )
     await _broadcast_current_status(db, agent_status_id)
     route_params = {"routes": supplier_params["routes"]}
-    route_data = await manager.fetch_by_types(["traffic", "shipping"], route_params)
-    shipping_result = await analyze_shipping_disruptions(route_data)
+    route_data = await manager.fetch_by_types(
+        ["traffic", "shipping"], route_params
+    )
+    # Run Shipment Agent (LangGraph + LangChain) on shipping data.
+    shipping_only = {"shipping": route_data.get("shipping") or []}
+    shipping_result = await run_shipment_agent_graph(shipping_only, scope)
     logger.info(
         "_run_analysis_for_oem: shipping analysis risks=%d for OEM %s",
         len(shipping_result.get("risks") or []),
@@ -590,7 +663,11 @@ async def _run_analysis_for_oem(
         aff_label = None
         if getattr(risk, "affectedSuppliers", None):
             aff_label = ", ".join(
-                [str(n).strip() for n in (risk.affectedSuppliers or []) if str(n).strip()]
+                [
+                    str(n).strip()
+                    for n in (risk.affectedSuppliers or [])
+                    if str(n).strip()
+                ]
             ) or None
         if not aff_label:
             aff_label = risk.affectedSupplier
@@ -739,7 +816,9 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
                 agent_status_id=run.id,
             )
         else:
-            logger.info("trigger_manual_analysis_sync: starting run for all OEMs")
+            logger.info(
+                "trigger_manual_analysis_sync: starting run for all OEMs"
+            )
             oems = get_all_oems(db)
             if not oems:
                 _update_status(

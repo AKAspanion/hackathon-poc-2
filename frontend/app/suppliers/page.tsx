@@ -28,7 +28,7 @@ function RiskSummaryCell({ supplier }: { supplier: Supplier }) {
   const { riskSummary } = supplier;
   if (riskSummary.count === 0) {
     return (
-      <span className="text-gray-500 dark:text-gray-400 text-sm">No risks</span>
+      <span className="text-medium-gray dark:text-gray-400 text-sm">No risks</span>
     );
   }
 
@@ -38,14 +38,14 @@ function RiskSummaryCell({ supplier }: { supplier: Supplier }) {
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-sm font-medium text-gray-900 dark:text-white">
+      <span className="text-sm font-medium text-dark-gray dark:text-gray-200">
         {riskSummary.count} risk{riskSummary.count !== 1 ? 's' : ''}
       </span>
       <div className="flex flex-wrap gap-1">
         {severities.map(([sev, count]) => (
           <span
             key={sev}
-            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${severityBadgeClasses[sev] ?? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}
+            className={`inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-medium ${severityBadgeClasses[sev] ?? 'bg-light-gray/50 text-dark-gray'}`}
           >
             {sev}: {count}
           </span>
@@ -53,7 +53,7 @@ function RiskSummaryCell({ supplier }: { supplier: Supplier }) {
       </div>
       {riskSummary.latest && (
         <p
-          className="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate max-w-[220px]"
+          className="text-xs text-medium-gray dark:text-gray-400 mt-1 truncate max-w-[220px]"
           title={riskSummary.latest.title}
         >
           Latest: {riskSummary.latest.title}
@@ -75,18 +75,18 @@ function SwarmSummary({ swarm }: { swarm: SupplierSwarmSummary | null }) {
     <div className="mt-2 space-y-1">
       <div className="flex items-center gap-2">
         <span
-          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${swarmLevelBadgeClasses[swarm.riskLevel] ?? 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}
+          className={`inline-flex items-center px-2 py-0.5 rounded-lg text-xs font-semibold ${swarmLevelBadgeClasses[swarm.riskLevel] ?? 'bg-light-gray/50 text-dark-gray'}`}
         >
           Swarm risk: {swarm.riskLevel}
         </span>
-        <span className="text-xs text-gray-600 dark:text-gray-400">
+        <span className="text-xs text-medium-gray dark:text-gray-400">
           Score: {swarm.finalScore}
         </span>
       </div>
       {primaryAgent && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[260px]">
+        <p className="text-xs text-medium-gray dark:text-gray-400 truncate max-w-[260px]">
           Dominant driver: {primaryAgent.agentType}
-          {swarm.topDrivers && swarm.topDrivers.length > 0 ? ` — ${swarm.topDrivers[0]}` : ''}
+          {swarm.topDrivers && swarm.topDrivers.length > 0 ? ` - ${swarm.topDrivers[0]}` : ''}
         </p>
       )}
     </div>
@@ -155,14 +155,14 @@ export default function SuppliersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+    <div className="min-h-screen bg-off-white dark:bg-gray-900">
+      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-light-gray dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Link
                 href="/"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-light-gray dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm font-medium text-dark-gray dark:text-gray-200 hover:bg-off-white dark:hover:bg-gray-600 transition-colors"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -170,10 +170,10 @@ export default function SuppliersPage() {
                 Back
               </Link>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                <h1 className="heading-2 text-primary-dark dark:text-primary-light">
                   Suppliers
                 </h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="body-text text-medium-gray dark:text-gray-400">
                   All your suppliers
                 </p>
               </div>
@@ -188,17 +188,17 @@ export default function SuppliersPage() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 
             <div className="w-full">
-              <div className="bg-white w-full dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl px-4 py-3 sm:px-5 sm:py-4 shadow-sm">
+              <div className="bg-white dark:bg-gray-800 w-full border border-dashed border-light-gray dark:border-gray-600 rounded-xl px-4 py-3 sm:px-5 sm:py-4 shadow-sm">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    <p className="text-sm font-medium text-dark-gray dark:text-gray-200">
                       Onboard suppliers via CSV
                     </p>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    <p className="mt-1 text-xs text-medium-gray dark:text-gray-400">
                       Upload a CSV file with supplier details to quickly populate your watchlist. Required columns should match the backend schema.
                     </p>
                     {selectedFile && (
-                      <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">
+                      <p className="mt-2 text-xs text-dark-gray dark:text-gray-300">
                         Selected file{' '}
                         <span className="font-medium break-all">
                           {selectedFile.name}
@@ -208,7 +208,7 @@ export default function SuppliersPage() {
                   </div>
 
                   <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                    <label className="inline-flex items-center justify-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+                    <label className="inline-flex items-center justify-center px-3 py-2 border border-light-gray dark:border-gray-600 rounded-lg text-sm font-medium text-dark-gray dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-off-white dark:hover:bg-gray-600 cursor-pointer">
                       <input
                         type="file"
                         accept=".csv,text/csv"
@@ -221,7 +221,7 @@ export default function SuppliersPage() {
                       type="button"
                       onClick={handleUploadClick}
                       disabled={!selectedFile || uploadMutation.isPending}
-                      className="inline-flex items-center justify-center px-4 py-2 rounded-md text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                      className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg text-base font-semibold text-white bg-primary-dark hover:bg-primary-light disabled:bg-light-gray dark:disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors"
                     >
                       {uploadMutation.isPending ? 'Uploading…' : 'Upload CSV'}
                     </button>
@@ -244,84 +244,84 @@ export default function SuppliersPage() {
           )}
         </div>
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-light-gray dark:border-gray-700 overflow-hidden">
           {isLoading ? (
             <div className="p-12">
               <div className="animate-pulse space-y-4">
                 {[1, 2, 3, 4, 5].map((i) => (
-                  <div key={i} className="h-14 bg-gray-200 dark:bg-gray-700 rounded" />
+                  <div key={i} className="h-14 bg-light-gray dark:bg-gray-700 rounded" />
                 ))}
               </div>
             </div>
           ) : !suppliers || suppliers.length === 0 ? (
             <div className="p-12 text-center">
-              <p className="text-gray-500 dark:text-gray-400">
+              <p className="body-text text-medium-gray dark:text-gray-400">
                 No suppliers yet.
               </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-700/50">
+              <table className="min-w-full divide-y divide-light-gray dark:divide-gray-600">
+                <thead className="bg-off-white dark:bg-gray-700/50">
                   <tr>
                     <th
                       scope="col"
-                      className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider"
+                      className="px-6 py-4 text-left text-xs font-semibold text-dark-gray dark:text-gray-200 uppercase tracking-wider"
                     >
                       Supplier
                     </th>
                     <th
                       scope="col"
-                      className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider"
+                      className="px-6 py-4 text-left text-xs font-semibold text-dark-gray dark:text-gray-200 uppercase tracking-wider"
                     >
                       Location
                     </th>
                     <th
                       scope="col"
-                      className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider"
+                      className="px-6 py-4 text-left text-xs font-semibold text-dark-gray dark:text-gray-200 uppercase tracking-wider"
                     >
                       Commodities
                     </th>
                     <th
                       scope="col"
-                      className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider"
+                      className="px-6 py-4 text-left text-xs font-semibold text-dark-gray dark:text-gray-200 uppercase tracking-wider"
                     >
                       Risk data (AI)
                     </th>
                     <th
                       scope="col"
-                      className="px-6 py-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider"
+                      className="px-6 py-4 text-left text-xs font-semibold text-dark-gray dark:text-gray-200 uppercase tracking-wider"
                     >
                       Added
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody className="divide-y divide-light-gray dark:divide-gray-600">
                   {suppliers.map((supplier) => (
                     <tr
                       key={supplier.id}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+                      className="hover:bg-off-white dark:hover:bg-gray-700/30 transition-colors"
                     >
                       <td className="px-6 py-4">
-                        <span className="font-medium text-gray-900 dark:text-white">
+                        <span className="font-medium text-dark-gray dark:text-gray-200">
                           {supplier.name}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                      <td className="px-6 py-4 text-sm text-medium-gray dark:text-gray-400">
                         {[supplier.location, supplier.city, supplier.country, supplier.region]
                           .filter(Boolean)
-                          .join(', ') || '—'}
+                          .join(', ') || '-'}
                       </td>
                       <td
-                        className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400 max-w-[200px] truncate"
+                        className="px-6 py-4 text-sm text-medium-gray dark:text-gray-400 max-w-[200px] truncate"
                         title={supplier.commodities ?? undefined}
                       >
-                        {supplier.commodities || '—'}
+                        {supplier.commodities || '-'}
                       </td>
                       <td className="px-6 py-4">
                         <RiskSummaryCell supplier={supplier} />
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
+                      <td className="px-6 py-4 text-sm text-medium-gray dark:text-gray-400">
                         {formatDistanceToNow(new Date(supplier.createdAt), {
                           addSuffix: true,
                         })}

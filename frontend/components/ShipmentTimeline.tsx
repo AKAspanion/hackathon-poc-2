@@ -29,7 +29,7 @@ interface ShipmentTimelineProps {
 export function ShipmentTimeline({ days }: ShipmentTimelineProps) {
   return (
     <div className="space-y-3">
-      <h3 className="text-[13px] font-semibold uppercase tracking-wide text-medium-gray">
+      <h3 className="text-[13px] font-semibold uppercase tracking-wide text-medium-gray dark:text-gray-400">
         Day-by-Day Weather Exposure
       </h3>
 
@@ -55,25 +55,25 @@ export function ShipmentTimeline({ days }: ShipmentTimelineProps) {
           return (
             <div
               key={d.day_number}
-              className={`min-w-[150px] flex-1 rounded-xl border p-3 text-[13px] transition ${colors.border} ${colors.bg}`}
+              className={`min-w-[150px] flex-1 rounded-xl border p-3 text-[13px] transition ${colors.border} ${colors.bg} dark:border-gray-600 dark:bg-gray-800`}
             >
               <div className="flex items-start justify-between gap-1">
                 <div>
-                  <span className="font-semibold text-dark-gray">
+                  <span className="font-semibold text-dark-gray dark:text-gray-200">
                     Day {d.day_number}
                   </span>
                   {isOrigin && (
-                    <span className="ml-1.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                    <span className="ml-1.5 rounded-lg bg-sky-blue/40 dark:bg-gray-700 px-1.5 py-0.5 text-[10px] font-medium text-primary-dark dark:text-primary-light">
                       Origin
                     </span>
                   )}
                   {isDest && (
-                    <span className="ml-1.5 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">
+                    <span className="ml-1.5 rounded-full bg-purple-100 dark:bg-purple-900/30 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 dark:text-purple-300">
                       Dest.
                     </span>
                   )}
                   {d.weather.is_historical && (
-                    <span className="ml-1 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
+                    <span className="ml-1 rounded-lg bg-light-gray/50 dark:bg-gray-700 px-1.5 py-0.5 text-[10px] font-medium text-medium-gray dark:text-gray-400">
                       Historical
                     </span>
                   )}
@@ -81,36 +81,36 @@ export function ShipmentTimeline({ days }: ShipmentTimelineProps) {
                 <WeatherIcon condition={d.weather.condition} />
               </div>
 
-              <p className="mt-0.5 text-[11px] text-medium-gray">{d.date}</p>
+              <p className="mt-0.5 text-[11px] text-medium-gray dark:text-gray-400">{d.date}</p>
 
-              <p className="mt-1 text-[11px] font-medium text-dark-gray leading-tight">
+              <p className="mt-1 text-[11px] font-medium text-dark-gray dark:text-gray-200 leading-tight">
                 {d.location_name}
               </p>
 
-              <div className="mt-2 space-y-0.5 text-[12px] text-dark-gray">
+              <div className="mt-2 space-y-0.5 text-[12px] text-dark-gray dark:text-gray-300">
                 <div className="flex items-center gap-1">
-                  <span className="text-medium-gray">Cond:</span>{" "}
+                  <span className="text-medium-gray dark:text-gray-400">Cond:</span>{" "}
                   <span className="font-medium">{d.weather.condition}</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-medium-gray">Temp:</span>{" "}
+                  <span className="text-medium-gray dark:text-gray-400">Temp:</span>{" "}
                   <span className="font-medium">{d.weather.temp_c.toFixed(1)}°C</span>
                   {d.weather.min_temp_c != null && d.weather.max_temp_c != null && (
-                    <span className="text-[11px] text-medium-gray">
+                    <span className="text-[11px] text-medium-gray dark:text-gray-400">
                       ({d.weather.min_temp_c.toFixed(0)}-{d.weather.max_temp_c.toFixed(0)})
                     </span>
                   )}
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-medium-gray">Wind:</span>{" "}
+                  <span className="text-medium-gray dark:text-gray-400">Wind:</span>{" "}
                   <span className="font-medium">{d.weather.wind_kph.toFixed(0)} km/h</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-medium-gray">Rain:</span>{" "}
+                  <span className="text-medium-gray dark:text-gray-400">Rain:</span>{" "}
                   <span className="font-medium">{d.weather.precip_mm.toFixed(1)} mm</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <span className="text-medium-gray">Vis:</span>{" "}
+                  <span className="text-medium-gray dark:text-gray-400">Vis:</span>{" "}
                   <span className="font-medium">{d.weather.vis_km.toFixed(1)} km</span>
                 </div>
               </div>
@@ -125,7 +125,7 @@ export function ShipmentTimeline({ days }: ShipmentTimelineProps) {
               </div>
 
               {d.risk.primary_concerns[0] && (
-                <p className="mt-1.5 text-[11px] leading-snug text-dark-gray opacity-80">
+                <p className="mt-1.5 text-[11px] leading-snug text-dark-gray dark:text-gray-400 opacity-80">
                   {d.risk.primary_concerns[0]}
                 </p>
               )}

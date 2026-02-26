@@ -7,6 +7,7 @@ import {
   type ShippingRiskResult,
   type TrackingActivity,
 } from '@/lib/api';
+import { useTheme } from '@/lib/theme-context';
 
 const AWB_BY_SUPPLIER_NAME: Record<string, string> = {
   'Chennai Chip Supplier': 'AWB-CHEN-001',
@@ -18,13 +19,14 @@ const AWB_BY_SUPPLIER_NAME: Record<string, string> = {
 
 function riskLevelClass(level: string): string {
   const l = (level || '').toLowerCase();
-  if (l === 'low') return 'border-emerald-500/60 bg-emerald-500/10 text-emerald-400';
-  if (l === 'medium') return 'border-amber-500/60 bg-amber-500/10 text-amber-400';
-  if (l === 'high' || l === 'critical') return 'border-red-500/60 bg-red-500/10 text-red-400';
-  return 'border-gray-500/60 bg-gray-500/10 text-gray-400';
+  if (l === 'low') return 'border-cyan-blue/60 bg-cyan-blue/10 text-primary-dark dark:text-primary-light';
+  if (l === 'medium') return 'border-amber-500/60 bg-amber-500/10 text-amber-700 dark:text-amber-400';
+  if (l === 'high' || l === 'critical') return 'border-red-500/60 bg-red-500/10 text-red-700 dark:text-red-400';
+  return 'border-light-gray dark:border-gray-600 bg-light-gray/50 dark:bg-gray-700 text-medium-gray dark:text-gray-400';
 }
 
 export function ShippingRiskDashboard() {
+  const { theme } = useTheme();
   const [suppliers, setSuppliers] = useState<ShippingSupplierItem[]>([]);
   const [loadingSuppliers, setLoadingSuppliers] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -97,30 +99,30 @@ export function ShippingRiskDashboard() {
 
   return (
     <main className="mx-auto grid grid-cols-1 gap-6 py-6 lg:grid-cols-[minmax(280px,360px)_1fr]">
-      <section className="rounded-2xl border border-gray-700/80 bg-gray-800/90 p-4 shadow-xl">
+      <section className="rounded-2xl border border-light-gray dark:border-gray-600 bg-white dark:bg-gray-800 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wider text-gray-400">
+          <h2 className="heading-3 text-dark-gray dark:text-gray-200 uppercase tracking-wider">
             Suppliers
           </h2>
-          <span className="rounded-full border border-gray-600 bg-gray-900/90 px-2 py-0.5 text-xs text-gray-400">
+          <span className="rounded-full border border-light-gray dark:border-gray-600 bg-off-white dark:bg-gray-700/50 px-2 py-0.5 text-xs text-medium-gray dark:text-gray-400">
             Live data
           </span>
         </div>
         <div className="max-h-[calc(100vh-200px)] overflow-y-auto pr-2">
           {loadingSuppliers ? (
-            <p className="text-sm text-gray-400">Loading suppliers...</p>
+            <p className="body-text text-medium-gray dark:text-gray-400">Loading suppliers...</p>
           ) : suppliers.length === 0 ? (
-            <p className="text-sm text-gray-400">
+            <p className="body-text text-medium-gray dark:text-gray-400">
               No suppliers found. Seed script will populate on backend startup.
             </p>
           ) : (
             suppliers.map((s) => (
               <div
                 key={s.id}
-                className={`mb-2 cursor-pointer rounded-xl border p-3 transition hover:border-indigo-500/50 hover:bg-gray-700/30 ${
+                className={`mb-2 cursor-pointer rounded-xl border p-3 transition hover:border-primary-light/50 hover:bg-sky-blue/20 dark:hover:bg-gray-700/50 ${
                   selectedId === s.id
-                    ? 'border-indigo-500 bg-indigo-500/10'
-                    : 'border-gray-600 bg-gray-900/50'
+                    ? 'border-primary-dark bg-sky-blue/30 dark:bg-gray-700'
+                    : 'border-light-gray dark:border-gray-600 bg-off-white dark:bg-gray-800'
                 }`}
                 onClick={() => setSelectedId(s.id)}
                 role="button"
@@ -130,14 +132,14 @@ export function ShippingRiskDashboard() {
                 }
               >
                 <div className="mb-1 flex justify-between gap-2">
-                  <span className="text-sm font-medium text-white">
+                  <span className="text-sm font-medium text-dark-gray dark:text-gray-200">
                     {s.name}
                   </span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-medium-gray dark:text-gray-400">
                     {s.material_name}
                   </span>
                 </div>
-                <div className="mb-2 flex flex-wrap gap-1 text-xs text-gray-400">
+                <div className="mb-2 flex flex-wrap gap-1 text-xs text-medium-gray dark:text-gray-400">
                   <span>
                     {s.location_city ?? '?'} → {s.destination_city ?? 'Bangalore'}
                   </span>
@@ -153,7 +155,7 @@ export function ShippingRiskDashboard() {
                       e.stopPropagation();
                       handleRunRisk(s.id, s.name);
                     }}
-                    className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow-lg transition hover:bg-indigo-500 disabled:opacity-50"
+                    className="rounded-lg bg-primary-dark px-3 py-2 text-sm font-medium text-white shadow transition hover:bg-primary-light disabled:opacity-50"
                   >
                     Run Shipment Agent
                   </button>
@@ -163,7 +165,7 @@ export function ShippingRiskDashboard() {
                       e.stopPropagation();
                       handleViewTracking(s.name);
                     }}
-                    className="rounded-full border border-gray-600 bg-gray-800 px-3 py-1.5 text-xs text-gray-400 transition hover:bg-gray-700"
+                    className="rounded-lg border border-light-gray dark:border-gray-600 bg-off-white dark:bg-gray-700 px-3 py-2 text-sm text-dark-gray dark:text-gray-200 transition hover:bg-sky-blue/20 dark:hover:bg-gray-600"
                   >
                     View Tracking
                   </button>
@@ -174,33 +176,33 @@ export function ShippingRiskDashboard() {
         </div>
       </section>
 
-      <section className="flex flex-col rounded-2xl border border-gray-700/80 bg-gray-800/90 p-4 shadow-xl">
+      <section className="flex flex-col rounded-2xl border border-light-gray dark:border-gray-600 bg-white dark:bg-gray-800 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium uppercase tracking-wider text-gray-400">
+          <h2 className="heading-3 text-dark-gray dark:text-gray-200 uppercase tracking-wider">
             Risk & Tracking
           </h2>
-          <div className="flex items-center gap-2 text-xs text-gray-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-indigo-400 shadow-[0_0_6px_rgba(129,140,248,0.8)]" />
+          <div className="flex items-center gap-2 text-xs text-medium-gray dark:text-gray-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary-light" />
             <span>{statusMeta}</span>
           </div>
         </div>
-        <p className="mb-4 text-sm text-gray-400">{statusText}</p>
+        <p className="mb-4 body-text text-medium-gray dark:text-gray-400">{statusText}</p>
 
         <div className="grid flex-1 grid-rows-[auto_auto_1fr] gap-4">
           {result && (
             <div className="flex flex-wrap items-center gap-4">
               <div
-                className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-indigo-500 bg-gray-900"
+                className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-primary-dark dark:border-primary-light bg-off-white dark:bg-gray-800"
                 style={{
-                  background: `conic-gradient(#6366f1 0deg, #6366f1 ${scoreToDeg(result.shipping_risk_score)}deg, rgba(31,41,55,1) ${scoreToDeg(result.shipping_risk_score)}deg)`,
+                  background: `conic-gradient(#4A90E2 0deg, #4A90E2 ${scoreToDeg(result.shipping_risk_score)}deg, ${theme === 'dark' ? '#1f2937' : '#f9fafb'} ${scoreToDeg(result.shipping_risk_score)}deg)`,
                 }}
               >
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-900">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white dark:bg-gray-800">
                   <div className="text-center">
-                    <span className="block text-lg font-semibold text-white">
+                    <span className="block text-lg font-semibold text-dark-gray dark:text-gray-200">
                       {(result.shipping_risk_score * 100).toFixed(0)}%
                     </span>
-                    <span className="text-[10px] text-gray-400">risk</span>
+                    <span className="text-[10px] text-medium-gray dark:text-gray-400">risk</span>
                   </div>
                 </div>
               </div>
@@ -210,18 +212,18 @@ export function ShippingRiskDashboard() {
                 >
                   Risk level: {result.risk_level || 'Medium'}
                 </span>
-                <div className="flex flex-wrap gap-1 text-xs text-gray-400">
-                  <span className="rounded-full border border-gray-600 bg-gray-900 px-2 py-0.5">
+                <div className="flex flex-wrap gap-1 text-xs text-medium-gray dark:text-gray-400">
+                  <span className="rounded-lg border border-light-gray dark:border-gray-600 bg-off-white dark:bg-gray-700 px-2 py-0.5">
                     Delay: {result.delay_risk_score != null ? `${(result.delay_risk_score * 100).toFixed(0)}%` : 'n/a'}
                   </span>
-                  <span className="rounded-full border border-gray-600 bg-gray-900 px-2 py-0.5">
+                  <span className="rounded-lg border border-light-gray dark:border-gray-600 bg-off-white dark:bg-gray-700 px-2 py-0.5">
                     Stagnation: {result.stagnation_risk_score != null ? `${(result.stagnation_risk_score * 100).toFixed(0)}%` : 'n/a'}
                   </span>
-                  <span className="rounded-full border border-gray-600 bg-gray-900 px-2 py-0.5">
+                  <span className="rounded-lg border border-light-gray dark:border-gray-600 bg-off-white dark:bg-gray-700 px-2 py-0.5">
                     Velocity: {result.velocity_risk_score != null ? `${(result.velocity_risk_score * 100).toFixed(0)}%` : 'n/a'}
                   </span>
                 </div>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-medium-gray dark:text-gray-400">
                   Delay probability: {(result.delay_probability * 100).toFixed(0)}%
                 </span>
               </div>
@@ -231,20 +233,20 @@ export function ShippingRiskDashboard() {
           {result && (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <strong className="mb-2 block text-xs uppercase tracking-wider text-gray-400">
+                <strong className="mb-2 block text-xs uppercase tracking-wider text-medium-gray dark:text-gray-400">
                   Risk factors
                 </strong>
-                <ul className="list-inside list-disc space-y-0.5 text-sm text-gray-300">
+                <ul className="list-inside list-disc space-y-0.5 text-sm text-dark-gray dark:text-gray-300">
                   {(result.risk_factors || []).map((f, i) => (
                     <li key={i}>{f}</li>
                   ))}
                 </ul>
               </div>
               <div>
-                <strong className="mb-2 block text-xs uppercase tracking-wider text-gray-400">
+                <strong className="mb-2 block text-xs uppercase tracking-wider text-medium-gray dark:text-gray-400">
                   Recommended actions
                 </strong>
-                <ul className="list-inside list-disc space-y-0.5 text-sm text-gray-300">
+                <ul className="list-inside list-disc space-y-0.5 text-sm text-dark-gray dark:text-gray-300">
                   {(result.recommended_actions || []).map((a, i) => (
                     <li key={i}>{a}</li>
                   ))}
@@ -256,29 +258,29 @@ export function ShippingRiskDashboard() {
           <div className="grid min-h-0 grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <div className="mb-1 flex items-center justify-between">
-                <strong className="text-xs uppercase tracking-wider text-gray-400">
+                <strong className="text-xs uppercase tracking-wider text-medium-gray dark:text-gray-400">
                   Tracking timeline
                 </strong>
-                <span className="text-xs text-gray-400">{timelineAwb}</span>
+                <span className="text-xs text-medium-gray dark:text-gray-400">{timelineAwb}</span>
               </div>
-              <div className="max-h-52 overflow-y-auto rounded-lg border border-gray-600 bg-gray-900/80 p-2">
+              <div className="max-h-52 overflow-y-auto rounded-lg border border-light-gray dark:border-gray-600 bg-off-white dark:bg-gray-700/50 p-2">
                 {timeline.length === 0 ? (
-                  <p className="text-sm text-gray-500">No tracking data yet.</p>
+                  <p className="body-text text-medium-gray dark:text-gray-400">No tracking data yet.</p>
                 ) : (
                   timeline.map((act, i) => (
                     <div
                       key={i}
                       className="mb-3 flex gap-2 text-sm"
                     >
-                      <div className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-indigo-500" />
+                      <div className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-primary-light" />
                       <div>
                         <div>
-                          <strong>{act.status}</strong> · {act.activity}
+                          <strong className="text-dark-gray dark:text-gray-200">{act.status}</strong> · <span className="text-dark-gray dark:text-gray-200">{act.activity}</span>
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-medium-gray dark:text-gray-400">
                           {act.location}
                         </div>
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-medium-gray dark:text-gray-400">
                           {act.date}
                         </span>
                       </div>
@@ -288,10 +290,10 @@ export function ShippingRiskDashboard() {
               </div>
             </div>
             <div>
-              <strong className="mb-1 block text-xs uppercase tracking-wider text-gray-400">
+              <strong className="mb-1 block text-xs uppercase tracking-wider text-medium-gray dark:text-gray-400">
                 Shipment metadata (JSON)
               </strong>
-              <pre className="max-h-52 overflow-auto rounded-lg border border-gray-600 bg-gray-900/80 p-2 text-xs text-gray-300">
+              <pre className="max-h-52 overflow-auto rounded-lg border border-light-gray dark:border-gray-600 bg-off-white dark:bg-gray-700/50 p-2 text-xs text-dark-gray dark:text-gray-300">
                 {result?.shipment_metadata
                   ? JSON.stringify(result.shipment_metadata, null, 2)
                   : 'No shipment metadata from agent.'}

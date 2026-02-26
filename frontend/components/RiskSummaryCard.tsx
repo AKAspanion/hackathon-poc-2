@@ -22,13 +22,13 @@ export function RiskSummaryCard({
   const barColor = RISK_LEVEL_BAR_COLORS[overallLevel] ?? RISK_LEVEL_BAR_COLORS.low;
 
   return (
-    <div className="rounded-2xl border border-light-gray bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-light-gray dark:border-gray-600 bg-white dark:bg-gray-800 p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-[12px] font-semibold uppercase tracking-wide text-medium-gray">
+          <h3 className="text-[12px] font-semibold uppercase tracking-wide text-medium-gray dark:text-gray-400">
             Overall risk
           </h3>
-          <p className="mt-2 text-[16px] text-dark-gray">
+          <p className="mt-2 text-[16px] text-dark-gray dark:text-gray-200">
             {formatRiskLevel(overallLevel)} · score {overallScore.toFixed(1)}/100
           </p>
         </div>
@@ -38,7 +38,7 @@ export function RiskSummaryCard({
           {formatRiskLevel(overallLevel)}
         </span>
       </div>
-      <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-light-gray/50">
+      <div className="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-light-gray/50 dark:bg-gray-700">
         <div
           className={`h-full rounded-full transition-all ${barColor}`}
           style={{
@@ -47,7 +47,7 @@ export function RiskSummaryCard({
         />
       </div>
       {primaryConcerns.length > 0 && (
-        <ul className="mt-4 space-y-1 text-[14px] text-dark-gray">
+        <ul className="mt-4 space-y-1 text-[14px] text-dark-gray dark:text-gray-300">
           {primaryConcerns.slice(0, 3).map((c) => (
             <li key={c}>• {c}</li>
           ))}

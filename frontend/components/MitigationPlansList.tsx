@@ -20,13 +20,13 @@ export function MitigationPlansList() {
 
   if (isLoading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Mitigation Plans</h2>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-light-gray dark:border-gray-700 p-6">
+        <h2 className="heading-3 text-dark-gray dark:text-gray-200 mb-4">Mitigation Plans</h2>
         <div className="space-y-4">
           {[1, 2, 3].map(i => (
             <div key={i} className="animate-pulse">
-              <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
-              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-full"></div>
+              <div className="h-4 bg-light-gray dark:bg-gray-700 rounded w-3/4 mb-2"></div>
+              <div className="h-3 bg-light-gray dark:bg-gray-700 rounded w-full"></div>
             </div>
           ))}
         </div>
@@ -36,47 +36,47 @@ export function MitigationPlansList() {
 
   if (!plans || plans.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Mitigation Plans</h2>
-        <p className="text-gray-500 dark:text-gray-400">No mitigation plans available</p>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-light-gray dark:border-gray-700 p-6">
+        <h2 className="heading-3 text-dark-gray dark:text-gray-200 mb-4">Mitigation Plans</h2>
+        <p className="body-text text-medium-gray dark:text-gray-400">No mitigation plans available</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-      <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Mitigation Plans</h2>
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-light-gray dark:border-gray-700 p-6">
+      <h2 className="heading-3 text-dark-gray dark:text-gray-200 mb-4">Mitigation Plans</h2>
       <div className="space-y-4">
         {plans.slice(0, 10).map(plan => (
           <div
             key={plan.id}
-            className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            className="border border-light-gray dark:border-gray-600 rounded-lg p-4 hover:bg-off-white dark:hover:bg-gray-700/50 transition-colors"
           >
             <div className="flex items-start justify-between mb-2">
-              <h3 className="font-semibold text-gray-900 dark:text-white">{plan.title}</h3>
-              <span className={`px-2 py-1 rounded text-xs font-medium ${statusColors[plan.status]}`}>
+              <h3 className="heading-3 text-dark-gray dark:text-gray-200">{plan.title}</h3>
+              <span className={`px-2 py-1 rounded-lg text-xs font-medium ${statusColors[plan.status]}`}>
                 {plan.status.replace('_', ' ')}
               </span>
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{plan.description}</p>
+            <p className="body-text text-medium-gray dark:text-gray-400 mb-3">{plan.description}</p>
             {plan.actions && plan.actions.length > 0 && (
               <div className="mb-3">
-                <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Actions:</h4>
+                <h4 className="text-xs font-semibold text-dark-gray dark:text-gray-200 mb-2">Actions:</h4>
                 <ul className="list-disc list-inside space-y-1">
                   {plan.actions.slice(0, 3).map((action, idx) => (
-                    <li key={idx} className="text-xs text-gray-600 dark:text-gray-400">
+                    <li key={idx} className="text-xs text-medium-gray dark:text-gray-400">
                       {action}
                     </li>
                   ))}
                   {plan.actions.length > 3 && (
-                    <li className="text-xs text-gray-500 dark:text-gray-500">
+                    <li className="text-xs text-medium-gray dark:text-gray-400">
                       +{plan.actions.length - 3} more
                     </li>
                   )}
                 </ul>
               </div>
             )}
-            <div className="flex flex-wrap gap-4 text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex flex-wrap gap-4 text-xs text-medium-gray dark:text-gray-400">
               {plan.risk && <span>⚠️ Risk: {plan.risk.title}</span>}
               {plan.opportunity && <span>✨ Opportunity: {plan.opportunity.title}</span>}
               {plan.assignedTo && <span>👤 {plan.assignedTo}</span>}

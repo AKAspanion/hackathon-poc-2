@@ -81,31 +81,23 @@ export default function WeatherPage() {
 
   return (
     <main className="mx-auto flex flex-col gap-10 md:flex-row md:items-stretch md:gap-10">
-      <aside className="flex flex-1 flex-col justify-between border-b border-light-gray pb-8 md:border-b-0 md:border-r md:border-light-gray md:pb-0 md:pr-10">
+      <aside className="flex flex-1 flex-col justify-between border-b border-light-gray dark:border-gray-600 pb-8 md:border-b-0 md:border-r md:border-light-gray md:dark:border-gray-600 md:pb-0 md:pr-10">
         <div className="space-y-6">
-          <div className="inline-flex items-center gap-2 rounded-full border border-primary-light/50 bg-sky-blue/40 px-3 py-1.5 text-[12px] font-medium uppercase tracking-wide text-primary-dark">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary-light/50 dark:border-primary-light/50 bg-sky-blue/40 dark:bg-gray-700/50 px-3 py-1.5 text-[12px] font-medium uppercase tracking-wide text-primary-dark dark:text-primary-light">
             <span className="h-1.5 w-1.5 rounded-full bg-primary-light" />
             Weather Agent · Manufacturing
           </div>
-          <h2 className="text-[28px] font-bold leading-tight text-dark-gray">
+          <h2 className="text-[28px] font-bold leading-tight text-dark-gray dark:text-gray-200">
             Weather‑aware Supply Chain Risk
           </h2>
-          <p className="max-w-xl text-[16px] leading-relaxed text-medium-gray">
-            Analyse weather exposure across your shipment timeline from Supplier to OEM — day by day.
+          <p className="max-w-xl text-[16px] leading-relaxed text-medium-gray dark:text-gray-400">
+            Analyze weather exposure across your shipment timeline from Supplier to OEM - day by day.
           </p>
-          <div className="mt-6 flex rounded-xl border border-light-gray bg-white p-1 gap-1 w-fit">
-            <Link
-              href="/"
-              className="rounded-lg px-4 py-2 text-[13px] font-medium text-medium-gray hover:text-dark-gray"
-            >
-              ← Back to Dashboard
-            </Link>
-          </div>
         </div>
       </aside>
       <div className="flex flex-1 flex-col gap-6">
-        <div className="flex flex-col gap-4 rounded-2xl border border-light-gray bg-white p-5 shadow-sm">
-          <h3 className="text-[18px] font-semibold text-dark-gray">Shipment Exposure</h3>
+        <div className="flex flex-col gap-4 rounded-2xl border border-light-gray dark:border-gray-600 bg-white dark:bg-gray-800 p-5 shadow-sm">
+          <h3 className="text-[18px] font-semibold text-dark-gray dark:text-gray-200">Shipment Exposure</h3>
           <ShipmentForm
             input={shipmentInput}
             onChange={setShipmentInput}
@@ -133,8 +125,8 @@ export default function WeatherPage() {
             />
           </>
         )}
-        <div className="flex flex-col gap-4 rounded-2xl border border-light-gray bg-white p-5 shadow-sm">
-          <h3 className="text-[18px] font-semibold text-dark-gray">City Risk</h3>
+        <div className="flex flex-col gap-4 rounded-2xl border border-light-gray dark:border-gray-600 bg-white dark:bg-gray-800 p-5 shadow-sm">
+          <h3 className="text-[18px] font-semibold text-dark-gray dark:text-gray-200">City Risk</h3>
           <WeatherRiskForm
             city={city}
             onCityChange={setCity}

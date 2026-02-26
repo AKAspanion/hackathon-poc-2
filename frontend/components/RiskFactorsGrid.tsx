@@ -14,7 +14,7 @@ interface RiskFactorsGridProps {
 export function RiskFactorsGrid({ factors }: RiskFactorsGridProps) {
   return (
     <div className="space-y-3">
-      <h3 className="text-[12px] font-semibold uppercase tracking-wide text-medium-gray">
+      <h3 className="text-[12px] font-semibold uppercase tracking-wide text-medium-gray dark:text-gray-400">
         Risk breakdown by dimension
       </h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -23,10 +23,10 @@ export function RiskFactorsGrid({ factors }: RiskFactorsGridProps) {
           return (
             <div
               key={f.factor}
-              className="flex flex-col rounded-2xl border border-light-gray bg-white p-4 shadow-sm"
+              className="flex flex-col rounded-2xl border border-light-gray dark:border-gray-600 bg-white dark:bg-gray-800 p-4 shadow-sm"
             >
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <span className="font-semibold capitalize text-dark-gray">
+                <span className="font-semibold capitalize text-dark-gray dark:text-gray-200">
                   {f.factor.replace(/_/g, " ")}
                 </span>
                 <span
@@ -35,11 +35,11 @@ export function RiskFactorsGrid({ factors }: RiskFactorsGridProps) {
                   {formatRiskLevel(f.level)} · {f.score.toFixed(1)}
                 </span>
               </div>
-              <p className="text-[14px] leading-relaxed text-medium-gray">
+              <p className="text-[14px] leading-relaxed text-medium-gray dark:text-gray-400">
                 {f.summary}
               </p>
               {f.mitigation && (
-                <p className="mt-2 text-[13px] text-primary-dark">
+                <p className="mt-2 text-[13px] text-primary-dark dark:text-primary-light">
                   Mitigation: {f.mitigation}
                 </p>
               )}

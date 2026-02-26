@@ -3,19 +3,19 @@
 export default function NewsPage() {
   return (
     <>
-      <div className="">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+      <div>
+        <h2 className="heading-3 text-dark-gray dark:text-gray-200">
           News Agent
         </h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="body-text text-medium-gray dark:text-gray-400">
           Supply chain & logistics news · Coming soon
         </p>
       </div>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 border border-gray-200 dark:border-gray-700 border-dashed mt-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 border border-light-gray dark:border-gray-600 border-dashed mt-6">
           <div className="flex flex-col items-center justify-center gap-4 text-center min-h-[240px]">
-            <div className="rounded-full bg-gray-100 dark:bg-gray-700 p-4">
+            <div className="rounded-full bg-sky-blue/40 dark:bg-gray-700/50 p-4">
               <svg
-                className="h-10 w-10 text-gray-400 dark:text-gray-500"
+                className="h-10 w-10 text-primary-dark dark:text-primary-light"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -30,10 +30,10 @@ export default function NewsPage() {
               </svg>
             </div>
             <div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+              <h3 className="heading-3 text-dark-gray dark:text-gray-200">
                 News Agent
               </h3>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 max-w-sm">
+              <p className="mt-1 body-text text-medium-gray dark:text-gray-400 max-w-sm">
                 This section will show supply chain and logistics news powered by the News Agent.
               </p>
             </div>

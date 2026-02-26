@@ -28,11 +28,11 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+    <div className="min-h-screen bg-off-white dark:bg-gray-900">
+      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-light-gray dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            <h1 className="heading-2 text-primary-dark dark:text-primary-light">
               OEM Login
             </h1>
             <AppNav />
@@ -41,8 +41,8 @@ export default function LoginPage() {
       </header>
 
       <main className="max-w-md mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8">
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-light-gray dark:border-gray-700 p-8">
+          <p className="body-text text-medium-gray dark:text-gray-400 mb-6">
             Sign in with your email. No password required. If you don’t have an
             account, we’ll create one.
           </p>
@@ -50,7 +50,7 @@ export default function LoginPage() {
             <div>
               <label
                 htmlFor="email"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                className="block text-sm font-medium text-dark-gray dark:text-gray-200 mb-1"
               >
                 Email
               </label>
@@ -61,13 +61,13 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@company.com"
                 required
-                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 rounded-lg border border-light-gray dark:border-gray-600 bg-white dark:bg-gray-700 text-dark-gray dark:text-gray-100 placeholder-medium-gray dark:placeholder-gray-400 focus:ring-2 focus:ring-primary-light focus:border-transparent"
               />
             </div>
             <button
               type="submit"
               disabled={loginMutation.isPending}
-              className="w-full px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-medium transition-colors"
+              className="w-full px-5 py-2.5 rounded-lg bg-primary-dark hover:bg-primary-light disabled:bg-light-gray dark:disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium transition-colors text-base"
             >
               {loginMutation.isPending ? 'Signing in...' : 'Sign in'}
             </button>
@@ -79,7 +79,7 @@ export default function LoginPage() {
                 : 'Sign in failed'}
             </p>
           )}
-          <p className="mt-6 text-sm text-gray-500 dark:text-gray-400 text-center">
+          <p className="mt-6 body-text text-medium-gray dark:text-gray-400 text-center">
             New here? Sign in with your email to create an account.
           </p>
         </div>

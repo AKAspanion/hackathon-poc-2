@@ -5,11 +5,11 @@ import { ShippingRiskDashboard } from '@/components/ShippingRiskDashboard';
 export default function ShippingRiskPage() {
   return (
     <>
-      <div className="">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+      <div>
+        <h2 className="heading-3 text-dark-gray dark:text-gray-200">
           Shipping Risk Intelligence
         </h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="body-text text-medium-gray dark:text-gray-400">
           Manufacturing hub: Bangalore, India · Shipment Agent · LLM + Tracking
         </p>
       </div>

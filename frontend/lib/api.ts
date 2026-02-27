@@ -172,6 +172,7 @@ export const agentApi = {
   getStatus: () =>
     api.get<AgentStatus>("/agent/status").then((res) => res.data),
   triggerAnalysis: () => api.post("/agent/trigger").then((res) => res.data),
+  triggerAnalysisV2: () => api.post("/agent/trigger/v2").then((res) => res.data),
 };
 
 export const risksApi = {

@@ -36,6 +36,11 @@ from app.services.websocket_manager import (
     broadcast_agent_status,
     broadcast_suppliers_snapshot,
 )
+from app.orchestration.graphs.states import (
+    OemOrchestrationState,
+    SupplierWorkflowContext,
+)
+from app.orchestration.graphs.oem_orchestration_graph import OEM_ORCHESTRATION_GRAPH
 
 logger = logging.getLogger(__name__)
 
@@ -1118,6 +1123,180 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
         if latest:
             latest.status = AgentStatus.ERROR.value
             latest.errorMessage = f"Error: {e}"
+            latest.lastUpdated = datetime.utcnow()
+            db.commit()
+    finally:
+        _is_running = False
+
+
+def trigger_manual_analysis_v2_sync(db: Session, oem_id: UUID | None) -> None:
+    """
+    Graph-based analysis trigger (v2).
+
+    Replaces the sequential agent calls with two composed LangGraphs:
+
+    - ``SupplierRiskGraph``     — runs Weather, News (supplier + global), and
+                                  Shipment agents **in parallel** for each supplier.
+    - ``OemOrchestrationGraph`` — iterates over every supplier, invokes the
+                                  SupplierRiskGraph, persists results, then
+                                  aggregates an OEM-level risk score and
+                                  generates mitigation plans.
+
+    The existing ``/agent/trigger`` endpoint and ``trigger_manual_analysis_sync``
+    are untouched so the original flow remains available.
+    """
+    global _is_running
+    running = _get_running_status(db)
+    if running:
+        logger.warning(
+            "trigger_manual_analysis_v2_sync: run already in progress id=%s status=%s",
+            running.id,
+            running.status,
+        )
+        return
+    if _is_running:
+        logger.warning("trigger_manual_analysis_v2_sync: in-process flag already set")
+        return
+    _is_running = True
+
+    try:
+        oem_list = (
+            [get_oem_by_id(db, oem_id)] if oem_id else get_all_oems(db)
+        )
+        oem_list = [o for o in oem_list if o is not None]
+        if not oem_list:
+            logger.warning("trigger_manual_analysis_v2_sync: no OEMs to process")
+            return
+
+        for oem in oem_list:
+            scopes = get_oem_supplier_scopes(db, oem.id)
+            if not scopes:
+                logger.warning(
+                    "trigger_manual_analysis_v2_sync: OEM %s has no supplier scopes",
+                    oem.id,
+                )
+                continue
+
+            today = date.today()
+            existing_count = (
+                db.query(WorkflowRun)
+                .filter(
+                    WorkflowRun.oemId == oem.id,
+                    WorkflowRun.runDate == today,
+                )
+                .count()
+            )
+
+            # Pre-create one WorkflowRun + AgentStatusEntity per supplier so the
+            # existing DB structure and frontend expectations are preserved.
+            contexts: list[SupplierWorkflowContext] = []
+            for i, scope in enumerate(scopes):
+                supplier_id_uuid = (
+                    UUID(scope["supplierId"]) if scope.get("supplierId") else None
+                )
+                workflow_run = WorkflowRun(
+                    oemId=oem.id,
+                    supplierId=supplier_id_uuid,
+                    runDate=today,
+                    runIndex=existing_count + i + 1,
+                )
+                db.add(workflow_run)
+                db.commit()
+                db.refresh(workflow_run)
+
+                task_label = (
+                    f"[v2] {oem.name} / {scope.get('supplierName', '')}"
+                    if scope.get("supplierName")
+                    else f"[v2] {oem.name}"
+                )
+                run = _create_agent_run_in_db(
+                    db,
+                    oem_id=oem.id,
+                    workflow_run_id=workflow_run.id,
+                    initial_task=task_label,
+                    supplier_id=supplier_id_uuid,
+                )
+                contexts.append(
+                    SupplierWorkflowContext(
+                        scope=scope,
+                        workflow_run_id=str(workflow_run.id),
+                        agent_status_id=str(run.id),
+                    )
+                )
+
+            initial_state: OemOrchestrationState = {
+                "oem_id": str(oem.id),
+                "remaining_contexts": contexts,
+                "processed_contexts": [],
+                "supplier_results": [],
+            }
+
+            logger.info(
+                "trigger_manual_analysis_v2_sync: invoking OemOrchestrationGraph "
+                "for OEM %s with %d supplier(s)",
+                oem.id,
+                len(contexts),
+            )
+
+            asyncio.run(
+                OEM_ORCHESTRATION_GRAPH.ainvoke(
+                    initial_state,
+                    config={"configurable": {"db": db}},
+                )
+            )
+
+            # Update counters on each AgentStatusEntity after the graph completes.
+            for ctx in contexts:
+                agent_status_id = UUID(ctx["agent_status_id"])
+                workflow_run_id = UUID(ctx["workflow_run_id"])
+                ent = (
+                    db.query(AgentStatusEntity)
+                    .filter(AgentStatusEntity.id == agent_status_id)
+                    .first()
+                )
+                if not ent:
+                    continue
+                ent.risksDetected = (
+                    db.query(Risk)
+                    .filter(
+                        Risk.agentStatusId == agent_status_id,
+                        Risk.workflowRunId == workflow_run_id,
+                    )
+                    .count()
+                )
+                ent.opportunitiesIdentified = (
+                    db.query(Opportunity)
+                    .filter(
+                        Opportunity.agentStatusId == agent_status_id,
+                        Opportunity.workflowRunId == workflow_run_id,
+                    )
+                    .count()
+                )
+                ent.plansGenerated = (
+                    db.query(MitigationPlan)
+                    .filter(MitigationPlan.agentStatusId == agent_status_id)
+                    .count()
+                )
+                ent.lastProcessedData = {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "oemsProcessed": [oem.name],
+                    "supplierId": ctx["scope"].get("supplierId"),
+                    "supplierName": ctx["scope"].get("supplierName"),
+                    "workflowRunId": ctx["workflow_run_id"],
+                    "graphVersion": "v2",
+                }
+                db.commit()
+
+    except Exception as e:
+        logger.exception("trigger_manual_analysis_v2_sync: error — %s", e)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        latest = get_status(db)
+        if latest:
+            latest.status = AgentStatus.ERROR.value
+            latest.errorMessage = f"v2 error: {e}"
             latest.lastUpdated = datetime.utcnow()
             db.commit()
     finally:

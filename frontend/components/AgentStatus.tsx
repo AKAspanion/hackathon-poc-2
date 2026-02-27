@@ -27,7 +27,7 @@ export function AgentStatus() {
     queryFn: agentApi.getStatus,
   });
   const triggerMutation = useMutation({
-    mutationFn: agentApi.triggerAnalysis,
+    mutationFn: agentApi.triggerAnalysisV2,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-status'] });
       queryClient.invalidateQueries({ queryKey: ['risks'] });

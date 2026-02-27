@@ -10,6 +10,7 @@ from app.orchestration.agent_service import (
     get_status,
     get_latest_risk_score,
     trigger_manual_analysis_sync,
+    trigger_manual_analysis_v2_sync,
     _ensure_agent_status,
 )
 
@@ -93,3 +94,26 @@ def trigger_analysis(
     oem_id = (body.oemId if body else None) or oem.id
     trigger_manual_analysis_sync(db, oem_id)
     return {"message": "Analysis triggered successfully", "oemId": str(oem_id)}
+
+
+@router.post("/trigger/v2")
+def trigger_analysis_v2(
+    body: TriggerBody | None = None,
+    oem: Oem = Depends(get_current_oem),
+    db: Session = Depends(get_db),
+):
+    """
+    Graph-based analysis (v2).
+
+    Runs Weather, News, and Shipment agents in parallel inside a
+    SupplierRiskGraph, then aggregates a unified risk score per supplier
+    and an OEM-level score via the OemOrchestrationGraph.
+
+    The original /agent/trigger endpoint is unchanged.
+    """
+    oem_id = (body.oemId if body else None) or oem.id
+    trigger_manual_analysis_v2_sync(db, oem_id)
+    return {
+        "message": "Graph-based analysis (v2) triggered successfully",
+        "oemId": str(oem_id),
+    }

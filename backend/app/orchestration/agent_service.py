@@ -44,20 +44,31 @@ from app.orchestration.graphs.oem_orchestration_graph import OEM_ORCHESTRATION_G
 
 logger = logging.getLogger(__name__)
 
+# Base severity weights for individual risks.
 SEVERITY_WEIGHT = {"critical": 4, "high": 3, "medium": 2, "low": 1}
 
+# Domain weights let us emphasize certain risk sources in aggregation.
 DOMAIN_WEIGHTS = {
     "weather": 1.0,
     "shipping": 1.3,
     "news": 1.1,
 }
 
+# Controls the curvature of the non-linear escalation function:
+# score = 100 * (1 - exp(-base_weight / RISK_SCORE_CURVE_K))
 RISK_SCORE_CURVE_K = 12.0
 
 _is_running = False
 
 
 def _ensure_agent_status(db: Session) -> AgentStatusEntity:
+    """
+    Ensure there is at least one AgentStatusEntity row.
+
+    This is used primarily for the /agent/status endpoint to bootstrap
+    an initial idle status on a fresh database. It always returns the
+    most recently created row.
+    """
     status = (
         db.query(AgentStatusEntity).order_by(AgentStatusEntity.createdAt.desc()).first()
     )
@@ -76,6 +87,14 @@ def _ensure_agent_status(db: Session) -> AgentStatusEntity:
 
 
 def _get_running_status(db: Session) -> AgentStatusEntity | None:
+    """
+    Return the most recent agent_status row that represents an active run.
+
+    A row is considered "running" only while it is in one of the
+    transitional states: monitoring, analyzing, or processing. Idle and
+    completed/error states are treated as non-running so a new trigger
+    will create a fresh workflow entry.
+    """
     return (
         db.query(AgentStatusEntity)
         .filter(
@@ -99,6 +118,9 @@ def _create_agent_run_in_db(
     initial_task: str | None,
     supplier_id: UUID | None = None,
 ) -> AgentStatusEntity:
+    """
+    Create a new agent_status row representing a single workflow trigger.
+    """
     ent = AgentStatusEntity(
         oemId=oem_id,
         workflowRunId=workflow_run_id,
@@ -138,10 +160,13 @@ def get_oem_scope(db: Session, oem_id: UUID) -> OemScope | None:
     regions: list[str] = []
     commodities = set()
 
+    # Seed scope with OEM's own location so weather/news/shipping analysis
+    # always considers the OEM side of the network.
     if getattr(oem, "location", None):
         locations.append(oem.location)  # type: ignore[arg-type]
     if getattr(oem, "city", None):
         cities.append(oem.city)  # type: ignore[arg-type]
+    # Prefer explicit countryCode when available, fall back to country.
     country_code = getattr(oem, "countryCode", None)
     if country_code:
         countries.append(country_code)  # type: ignore[arg-type]
@@ -168,6 +193,7 @@ def get_oem_scope(db: Session, oem_id: UUID) -> OemScope | None:
                 c = c.strip()
                 if c:
                     commodities.add(c)
+    # Also fold in OEM-level commodities if present.
     if getattr(oem, "commodities", None):
         for c in (oem.commodities or "").replace(";", ",").split(","):
             c = c.strip()
@@ -186,6 +212,10 @@ def get_oem_scope(db: Session, oem_id: UUID) -> OemScope | None:
 
 
 def get_oem_supplier_scope(db: Session, oem_id: UUID, supplier) -> OemScope:
+    """
+    Build a scope for a single OEM-supplier pair (one supplier only).
+    Used when the workflow runs per supplier so each run has oem_id + supplier_id.
+    """
     oem = get_oem_by_id(db, oem_id)
     if not oem:
         raise ValueError(f"OEM {oem_id} not found")
@@ -240,6 +270,10 @@ def get_oem_supplier_scope(db: Session, oem_id: UUID, supplier) -> OemScope:
 
 
 def get_oem_supplier_scopes(db: Session, oem_id: UUID) -> list[OemScope]:
+    """
+    Return one scope per supplier for the given OEM.
+    Each scope is an OEM-supplier pair so the workflow can run once per supplier.
+    """
     oem = get_oem_by_id(db, oem_id)
     if not oem:
         return []
@@ -269,6 +303,8 @@ def _build_data_source_params(scope: OemScope) -> dict:
         "semiconductors",
     ]
 
+    # Model logistics explicitly as routes from each supplier city to OEM city.
+    # By construction in get_oem_scope, the first city (if present) is the OEM.
     routes: list[dict] = []
     if cities:
         oem_city = cities[0]
@@ -304,6 +340,14 @@ def _build_global_news_params() -> dict:
 
 
 def _compute_risk_score(risks: list) -> tuple[float, dict, dict]:
+    """
+    Risk Analysis Agent:
+
+    - Normalize all risks onto a 0-100 scale using severity and domain weights.
+    - Apply a non-linear escalation curve so many medium risks escalate faster
+      than a simple linear sum.
+    - Track per-severity counts and per-sourceType weighted contributions.
+    """
     severity_counts: dict[str, int] = {}
     breakdown: dict[str, float] = {}
     base_weight = 0.0
@@ -315,6 +359,8 @@ def _compute_risk_score(risks: list) -> tuple[float, dict, dict]:
         src = r.sourceType or "other"
         domain_weight = DOMAIN_WEIGHTS.get(src, 1.0)
 
+        # Risk-pointer aware nudges based on richer sourceData.
+        # Shipping: escalate when delay/stagnation metrics are critical.
         pointer_boost = 1.0
         src_data = getattr(r, "sourceData", None) or {}
         if src == "shipping":
@@ -343,6 +389,7 @@ def _compute_risk_score(risks: list) -> tuple[float, dict, dict]:
         base_weight += weight
         breakdown[src] = breakdown.get(src, 0.0) + weight
 
+    # Score 0-100 using a saturating escalation curve. No risks => 0.
     overall = (
         0.0
         if not risks
@@ -355,6 +402,9 @@ def _compute_risk_score(risks: list) -> tuple[float, dict, dict]:
 
 
 def _score_to_level(score: float) -> str:
+    """
+    Map final numeric score to a discrete risk band.
+    """
     if score <= 25:
         return "LOW"
     if score <= 50:
@@ -370,6 +420,10 @@ def _update_status(
     task: str | None = None,
     agent_status_id: UUID | None = None,
 ) -> None:
+    """
+    Update the status row for the current run. If an explicit id is
+    provided, update that row; otherwise fall back to the latest row.
+    """
     q = db.query(AgentStatusEntity)
     if agent_status_id:
         ent = q.filter(AgentStatusEntity.id == agent_status_id).first()
@@ -387,6 +441,9 @@ async def _broadcast_current_status(
     db: Session,
     agent_status_id: UUID | None = None,
 ) -> None:
+    """
+    Build a lightweight status payload and broadcast it to websocket clients.
+    """
     ent = (
         get_status(db)
         if agent_status_id is None
@@ -413,6 +470,12 @@ async def _broadcast_current_status(
 
 
 async def _broadcast_suppliers_for_oem(db: Session, oem_id: UUID) -> None:
+    """
+    Broadcast the latest per-supplier snapshot for the given OEM.
+
+    This is safe to call multiple times during a run; it always recomputes
+    based on the current database state.
+    """
     suppliers = get_suppliers(db, oem_id)
     if not suppliers:
         return
@@ -492,17 +555,7 @@ async def _run_analysis_for_oem(
     )
     await _broadcast_current_status(db, agent_status_id)
 
-    # scope["cities"][0] = OEM city, scope["cities"][1] = supplier city
-    _cities = scope.get("cities") or []
-    _oem_city      = _cities[0] if len(_cities) > 0 else "Unknown"
-    _supplier_city = _cities[1] if len(_cities) > 1 else _oem_city
-
-    weather_only = {
-        "supplier_city":       _supplier_city,
-        "oem_city":            _oem_city,
-        "shipment_start_date": date.today().strftime("%Y-%m-%d"),
-        "transit_days":        5,
-    }
+    weather_only = {"weather": supplier_data.get("weather") or []}
     news_only = {"news": supplier_data.get("news") or []}
 
     weather_result = await run_weather_agent_graph(weather_only, scope)
@@ -553,6 +606,8 @@ async def _run_analysis_for_oem(
             workflow_run_id=workflow_run_id,
         )
 
+    # Broadcast after supplier-scoped risks/opportunities have been stored so
+    # the dashboard can show early signals per supplier.
     await _broadcast_suppliers_for_oem(db, oem_id)
 
     # 2. Global risk
@@ -581,6 +636,7 @@ async def _run_analysis_for_oem(
             workflow_run_id=workflow_run_id,
         )
 
+    # Broadcast again after global risks have been incorporated.
     await _broadcast_suppliers_for_oem(db, oem_id)
 
     # 3. Shipping routes
@@ -593,6 +649,7 @@ async def _run_analysis_for_oem(
     await _broadcast_current_status(db, agent_status_id)
     route_params = {"routes": supplier_params["routes"]}
     route_data = await manager.fetch_by_types(["traffic", "shipping"], route_params)
+    # Run Shipment Agent (LangGraph + LangChain) on shipping data.
     shipping_only = {"shipping": route_data.get("shipping") or []}
     shipping_result = await run_shipment_agent_graph(shipping_only, scope)
     logger.info(
@@ -639,7 +696,7 @@ async def _run_analysis_for_oem(
         len(all_risks),
     )
 
-    # 4b. Per-supplier risk scores
+    # 4b. Per-supplier risk scores (supplier-level)
     suppliers = get_suppliers(db, oem_id)
     for supplier in suppliers:
         supplier_risks = (
@@ -674,6 +731,7 @@ async def _run_analysis_for_oem(
         db.add(analysis_entry)
     db.commit()
 
+    # Broadcast after supplier-level risk scores have been updated.
     await _broadcast_suppliers_for_oem(db, oem_id)
 
     # 5. Mitigation plans by supplier
@@ -721,7 +779,7 @@ async def _run_analysis_for_oem(
         scope["oemName"],
     )
 
-    # 6. Per-risk plans
+    # 6. Per-risk plans for risks without supplier or not in combined
     risks_with_plan_supplier = set()
     for risk_list in risks_by_supplier.values():
         for r in risk_list:
@@ -744,6 +802,8 @@ async def _run_analysis_for_oem(
         )
         if plans > 0:
             continue
+        # For per-risk plans, include all affected suppliers as a
+        # comma-separated label for readability in the prompt.
         aff_label = None
         if getattr(risk, "affectedSuppliers", None):
             aff_label = (
@@ -830,11 +890,16 @@ async def _run_analysis_for_oem(
         scope["oemName"],
     )
 
-    # 8. Final broadcast
+    # 8. Final broadcast so dashboard cards reflect the full analysis run.
     await _broadcast_suppliers_for_oem(db, oem_id)
 
 
 def get_status(db: Session) -> AgentStatusEntity | None:
+    """
+    Latest agent_status row, representing the most recent workflow run.
+
+    Used by the dashboard to display the current/last run.
+    """
     return (
         db.query(AgentStatusEntity).order_by(AgentStatusEntity.createdAt.desc()).first()
     )
@@ -851,6 +916,8 @@ def get_latest_risk_score(db: Session, oem_id: UUID) -> SupplyChainRiskScore | N
 
 def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
     global _is_running
+    # First, check for any in-progress run in the database so we don't
+    # create duplicate runs across processes.
     running = _get_running_status(db)
     if running:
         logger.warning(
@@ -960,6 +1027,7 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
                     "No OEMs to process",
                 )
                 return
+            # Create a separate workflow run + status row per OEM-supplier pair.
             processed_oems: list[str] = []
             for oem in oems:
                 scopes = get_oem_supplier_scopes(db, oem.id)
@@ -1050,6 +1118,7 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
             db.rollback()
         except Exception:
             pass
+        # Attempt to mark the most recent run as errored.
         latest = get_status(db)
         if latest:
             latest.status = AgentStatus.ERROR.value
@@ -1061,6 +1130,21 @@ def trigger_manual_analysis_sync(db: Session, oem_id: UUID | None) -> None:
 
 
 def trigger_manual_analysis_v2_sync(db: Session, oem_id: UUID | None) -> None:
+    """
+    Graph-based analysis trigger (v2).
+
+    Replaces the sequential agent calls with two composed LangGraphs:
+
+    - ``SupplierRiskGraph``     — runs Weather, News (supplier + global), and
+                                  Shipment agents **in parallel** for each supplier.
+    - ``OemOrchestrationGraph`` — iterates over every supplier, invokes the
+                                  SupplierRiskGraph, persists results, then
+                                  aggregates an OEM-level risk score and
+                                  generates mitigation plans.
+
+    The existing ``/agent/trigger`` endpoint and ``trigger_manual_analysis_sync``
+    are untouched so the original flow remains available.
+    """
     global _is_running
     running = _get_running_status(db)
     if running:
@@ -1103,6 +1187,8 @@ def trigger_manual_analysis_v2_sync(db: Session, oem_id: UUID | None) -> None:
                 .count()
             )
 
+            # Pre-create one WorkflowRun + AgentStatusEntity per supplier so the
+            # existing DB structure and frontend expectations are preserved.
             contexts: list[SupplierWorkflowContext] = []
             for i, scope in enumerate(scopes):
                 supplier_id_uuid = (
@@ -1159,6 +1245,7 @@ def trigger_manual_analysis_v2_sync(db: Session, oem_id: UUID | None) -> None:
                 )
             )
 
+            # Update counters on each AgentStatusEntity after the graph completes.
             for ctx in contexts:
                 agent_status_id = UUID(ctx["agent_status_id"])
                 workflow_run_id = UUID(ctx["workflow_run_id"])

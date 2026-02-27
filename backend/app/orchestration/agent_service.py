@@ -558,7 +558,7 @@ async def _run_analysis_for_oem(
     weather_only = {"weather": supplier_data.get("weather") or []}
     news_only = {"news": supplier_data.get("news") or []}
 
-    weather_result = await run_weather_agent_graph(weather_only, scope)
+    weather_result = await run_weather_agent_graph(scope)
     news_result = await run_news_agent_graph(news_only, scope, context="supplier")
 
     combined_risks = (weather_result.get("risks") or []) + (

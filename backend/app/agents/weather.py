@@ -1,10 +1,12 @@
 """
 weather.py
 
-Single LangGraph: run_weather_agent_graph(weather_data, scope)
-Returns the same risk_analysis_payload format as _build_risk_analysis_payload in shipment_weather.py
-
-Mock data by default. Set USE_LIVE_DATA=true in .env for real API calls.
+Single LangGraph: run_weather_agent_graph(scope)
+- Fetches OEM + Supplier city from supply_chain DB (localhost:8000)
+- Fetches weather data from mock DB (localhost:4000/collections/weather)
+- If weather not found in mock DB:
+    - USE_LIVE_DATA=true  → real weather API
+    - USE_LIVE_DATA=false → static mock scenarios
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import random
 from datetime import date, datetime, timedelta
 from typing import Any, TypedDict
 
+import httpx
 from langgraph.graph import END, StateGraph
 
 from app.config import settings
@@ -28,24 +31,31 @@ from app.services.agent_types import OemScope
 
 logger = logging.getLogger(__name__)
 
+SUPPLY_CHAIN_BASE = "http://localhost:8000"
+MOCK_DB_BASE      = "http://localhost:4000"
+
 
 def _use_live_data() -> bool:
     return getattr(settings, "use_live_data", False)
 
 
+# ---------------------------------------------------------------------------
+# Static fallback scenarios (used only if mock DB miss + USE_LIVE_DATA=false)
+# ---------------------------------------------------------------------------
+
 _SCENARIOS = [
-    {"condition": "Sunny",         "temp_c": 28.0, "wind_kph": 12.0, "precip_mm": 0.0,  "vis_km": 10.0, "humidity": 45, "code": 1000},
-    {"condition": "Partly Cloudy", "temp_c": 24.0, "wind_kph": 18.0, "precip_mm": 0.5,  "vis_km": 9.0,  "humidity": 60, "code": 1003},
-    {"condition": "Overcast",      "temp_c": 20.0, "wind_kph": 25.0, "precip_mm": 2.0,  "vis_km": 7.0,  "humidity": 72, "code": 1009},
-    {"condition": "Moderate Rain", "temp_c": 18.0, "wind_kph": 35.0, "precip_mm": 12.0, "vis_km": 4.0,  "humidity": 88, "code": 1189},
-    {"condition": "Heavy Rain",    "temp_c": 17.0, "wind_kph": 55.0, "precip_mm": 28.0, "vis_km": 2.0,  "humidity": 95, "code": 1195},
-    {"condition": "Thunderstorm",  "temp_c": 22.0, "wind_kph": 72.0, "precip_mm": 40.0, "vis_km": 1.5,  "humidity": 97, "code": 1276},
-    {"condition": "Fog",           "temp_c": 15.0, "wind_kph": 8.0,  "precip_mm": 0.2,  "vis_km": 0.8,  "humidity": 92, "code": 1135},
-    {"condition": "Light Snow",    "temp_c": -2.0, "wind_kph": 22.0, "precip_mm": 3.0,  "vis_km": 3.0,  "humidity": 80, "code": 1213},
+    {"condition": "Sunny",         "temp_c": 28.0, "wind_kph": 12.0, "precip_mm": 0.0,  "vis_km": 10.0, "humidity": 45},
+    {"condition": "Partly Cloudy", "temp_c": 24.0, "wind_kph": 18.0, "precip_mm": 0.5,  "vis_km": 9.0,  "humidity": 60},
+    {"condition": "Overcast",      "temp_c": 20.0, "wind_kph": 25.0, "precip_mm": 2.0,  "vis_km": 7.0,  "humidity": 72},
+    {"condition": "Moderate Rain", "temp_c": 18.0, "wind_kph": 35.0, "precip_mm": 12.0, "vis_km": 4.0,  "humidity": 88},
+    {"condition": "Heavy Rain",    "temp_c": 17.0, "wind_kph": 55.0, "precip_mm": 28.0, "vis_km": 2.0,  "humidity": 95},
+    {"condition": "Thunderstorm",  "temp_c": 22.0, "wind_kph": 72.0, "precip_mm": 40.0, "vis_km": 1.5,  "humidity": 97},
+    {"condition": "Fog",           "temp_c": 15.0, "wind_kph": 8.0,  "precip_mm": 0.2,  "vis_km": 0.8,  "humidity": 92},
+    {"condition": "Light Snow",    "temp_c": -2.0, "wind_kph": 22.0, "precip_mm": 3.0,  "vis_km": 3.0,  "humidity": 80},
 ]
 
 
-def _mock_weather(city: str, day_index: int) -> dict[str, Any]:
+def _static_mock(city: str, day_index: int) -> dict[str, Any]:
     rng = random.Random(hash(city.lower()) + day_index)
     s = rng.choices(_SCENARIOS, weights=[30, 20, 15, 15, 8, 5, 4, 3], k=1)[0].copy()
     return {
@@ -55,12 +65,149 @@ def _mock_weather(city: str, day_index: int) -> dict[str, Any]:
         "vis_km":    round(max(0.5, s["vis_km"]  + rng.uniform(-0.5, 0.5)), 1),
         "humidity":  min(100, max(20, s["humidity"] + rng.randint(-5, 5))),
         "condition": s["condition"],
-        "code":      s["code"],
     }
 
 
+# ---------------------------------------------------------------------------
+# HTTP helpers
+# ---------------------------------------------------------------------------
+
+async def _get_city_for_oem(oem_id: str) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(f"{SUPPLY_CHAIN_BASE}/oems/{oem_id}")
+            r.raise_for_status()
+            return r.json().get("city") or "Unknown"
+    except Exception as e:
+        logger.warning("Could not fetch OEM city for %s: %s", oem_id, e)
+        return "Unknown"
+
+
+async def _get_city_for_supplier(supplier_id: str) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(f"{SUPPLY_CHAIN_BASE}/suppliers/{supplier_id}")
+            r.raise_for_status()
+            return r.json().get("city") or "Unknown"
+    except Exception as e:
+        logger.warning("Could not fetch supplier city for %s: %s", supplier_id, e)
+        return "Unknown"
+
+
+async def _fetch_weather_from_mock_db(city: str) -> dict[str, Any] | None:
+    """
+    Hit mock DB: GET /collections/weather?q=city:<city>
+    Returns weather dict if found, None if not found.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(
+                f"{MOCK_DB_BASE}/collections/weather",
+                params={"q": f"city:{city}"},
+            )
+            r.raise_for_status()
+            data = r.json()
+            # mock server returns list or single object
+            if isinstance(data, list):
+                entry = data[0] if data else None
+            else:
+                entry = data or None
+
+            if not entry:
+                return None
+
+            return {
+                "temp_c":    float(entry.get("temp_c", 25)),
+                "wind_kph":  float(entry.get("wind_kph", 10)),
+                "precip_mm": float(entry.get("precip_mm", 0)),
+                "vis_km":    float(entry.get("vis_km", 10)),
+                "humidity":  int(entry.get("humidity", 50)),
+                "condition": entry.get("condition", "Unknown"),
+            }
+    except Exception as e:
+        logger.warning("Mock DB weather fetch failed for %s: %s", city, e)
+        return None
+
+
+async def _fetch_weather_from_live_api(city: str, target_str: str, is_past: bool) -> dict[str, Any]:
+    try:
+        from app.services.weather_service import (
+            get_current_weather,
+            get_forecast,
+            get_historical_weather,
+        )
+        today = date.today()
+        target_date = datetime.strptime(target_str, "%Y-%m-%d").date()
+
+        if target_date == today:
+            raw = await get_current_weather(city) or {}
+            cur = raw.get("current") or {}
+            return {
+                "temp_c":    float(cur.get("temp_c", 25)),
+                "wind_kph":  float(cur.get("wind_kph", 10)),
+                "precip_mm": float(cur.get("precip_mm", 0)),
+                "vis_km":    float(cur.get("vis_km", 10)),
+                "humidity":  int(cur.get("humidity", 50)),
+                "condition": (cur.get("condition") or {}).get("text", "Unknown"),
+            }
+        elif is_past:
+            raw = await get_historical_weather(city, target_str) or {}
+            fd  = (((raw.get("forecast") or {}).get("forecastday") or [{}])[0].get("day") or {})
+            return {
+                "temp_c":    float(fd.get("avgtemp_c", 25)),
+                "wind_kph":  float(fd.get("maxwind_kph", 10)),
+                "precip_mm": float(fd.get("totalprecip_mm", 0)),
+                "vis_km":    float(fd.get("avgvis_km", 10)),
+                "humidity":  int(fd.get("avghumidity", 50)),
+                "condition": (fd.get("condition") or {}).get("text", "Unknown"),
+            }
+        else:
+            raw = await get_forecast(city, days=14) or {}
+            fd  = next(
+                (d["day"] for d in (raw.get("forecast") or {}).get("forecastday") or [] if d.get("date") == target_str),
+                {},
+            )
+            return {
+                "temp_c":    float(fd.get("avgtemp_c", 25)),
+                "wind_kph":  float(fd.get("maxwind_kph", 10)),
+                "precip_mm": float(fd.get("totalprecip_mm", 0)),
+                "vis_km":    float(fd.get("avgvis_km", 10)),
+                "humidity":  int(fd.get("avghumidity", 50)),
+                "condition": (fd.get("condition") or {}).get("text", "Unknown"),
+            }
+    except Exception as e:
+        logger.warning("Live weather API failed for %s: %s", city, e)
+        return _static_mock(city, 0)
+
+
+async def _get_weather_for_city(city: str, target_str: str, is_past: bool, day_index: int) -> dict[str, Any]:
+    """
+    Priority:
+    1. Mock DB (localhost:4000)
+    2. Live API (if USE_LIVE_DATA=true)
+    3. Static mock fallback
+    """
+    # 1. Try mock DB first
+    w = await _fetch_weather_from_mock_db(city)
+    if w:
+        logger.info("Weather for %s fetched from mock DB", city)
+        return w
+
+    # 2. Mock DB miss — check USE_LIVE_DATA
+    if _use_live_data():
+        logger.info("Weather for %s not in mock DB, hitting live API", city)
+        return await _fetch_weather_from_live_api(city, target_str, is_past)
+
+    # 3. Static mock fallback
+    logger.info("Weather for %s not in mock DB, using static mock", city)
+    return _static_mock(city, day_index)
+
+
+# ---------------------------------------------------------------------------
+# LangGraph state
+# ---------------------------------------------------------------------------
+
 class WeatherGraphState(TypedDict, total=False):
-    weather_data: dict[str, Any]
     scope: OemScope
     supplier_city: str
     oem_city: str
@@ -71,31 +218,33 @@ class WeatherGraphState(TypedDict, total=False):
     result: dict[str, Any]
 
 
-def _extract_params_node(state: WeatherGraphState) -> WeatherGraphState:
-    """
-    Extract supplier_city, oem_city, start_date, transit_days.
-    Reads from weather_data first, falls back to scope.
-    scope["cities"][0] = OEM city, scope["cities"][1] = first supplier city.
-    """
-    weather_data = state.get("weather_data") or {}
+# ---------------------------------------------------------------------------
+# Node 1 — extract cities from supply_chain DB via scope ids
+# ---------------------------------------------------------------------------
+
+async def _extract_params_node(state: WeatherGraphState) -> WeatherGraphState:
     scope = state.get("scope") or {}
 
-    cities = scope.get("cities") or []
-    oem_city_from_scope      = cities[0] if len(cities) > 0 else "Unknown"
-    supplier_city_from_scope = cities[1] if len(cities) > 1 else oem_city_from_scope
+    oem_id      = scope.get("oemId")
+    supplier_id = scope.get("supplierId")
 
-    supplier_city       = weather_data.get("supplier_city")       or supplier_city_from_scope
-    oem_city            = weather_data.get("oem_city")            or oem_city_from_scope
-    shipment_start_date = weather_data.get("shipment_start_date") or date.today().strftime("%Y-%m-%d")
-    transit_days        = int(weather_data.get("transit_days")    or 5)
+    # Fetch cities from supply_chain DB
+    oem_city      = await _get_city_for_oem(oem_id)      if oem_id      else "Unknown"
+    supplier_city = await _get_city_for_supplier(supplier_id) if supplier_id else oem_city
+
+    logger.info("Cities resolved — OEM: %s, Supplier: %s", oem_city, supplier_city)
 
     return {
         "supplier_city":       supplier_city,
         "oem_city":            oem_city,
-        "shipment_start_date": shipment_start_date,
-        "transit_days":        transit_days,
+        "shipment_start_date": date.today().strftime("%Y-%m-%d"),
+        "transit_days":        5,
     }
 
+
+# ---------------------------------------------------------------------------
+# Node 2 — build day snapshots
+# ---------------------------------------------------------------------------
 
 async def _build_snapshots_node(state: WeatherGraphState) -> WeatherGraphState:
     supplier_city = state["supplier_city"]
@@ -126,56 +275,7 @@ async def _build_snapshots_node(state: WeatherGraphState) -> WeatherGraphState:
             f"In Transit - Day {i + 1}"
         )
 
-        if _use_live_data():
-            try:
-                from app.services.weather_service import (
-                    get_current_weather,
-                    get_forecast,
-                    get_historical_weather,
-                )
-                if target_date == today:
-                    raw = await get_current_weather(city) or {}
-                    cur = raw.get("current") or {}
-                    w = {
-                        "temp_c":    float(cur.get("temp_c", 25)),
-                        "wind_kph":  float(cur.get("wind_kph", 10)),
-                        "precip_mm": float(cur.get("precip_mm", 0)),
-                        "vis_km":    float(cur.get("vis_km", 10)),
-                        "humidity":  int(cur.get("humidity", 50)),
-                        "condition": (cur.get("condition") or {}).get("text", "Unknown"),
-                    }
-                elif is_past:
-                    raw = await get_historical_weather(city, target_str) or {}
-                    fd  = (((raw.get("forecast") or {}).get("forecastday") or [{}])[0].get("day") or {})
-                    w = {
-                        "temp_c":    float(fd.get("avgtemp_c", 25)),
-                        "wind_kph":  float(fd.get("maxwind_kph", 10)),
-                        "precip_mm": float(fd.get("totalprecip_mm", 0)),
-                        "vis_km":    float(fd.get("avgvis_km", 10)),
-                        "humidity":  int(fd.get("avghumidity", 50)),
-                        "condition": (fd.get("condition") or {}).get("text", "Unknown"),
-                    }
-                else:
-                    raw = await get_forecast(city, days=14) or {}
-                    fd  = next(
-                        (d["day"] for d in (raw.get("forecast") or {}).get("forecastday") or [] if d.get("date") == target_str),
-                        {},
-                    )
-                    w = {
-                        "temp_c":    float(fd.get("avgtemp_c", 25)),
-                        "wind_kph":  float(fd.get("maxwind_kph", 10)),
-                        "precip_mm": float(fd.get("totalprecip_mm", 0)),
-                        "vis_km":    float(fd.get("avgvis_km", 10)),
-                        "humidity":  int(fd.get("avghumidity", 50)),
-                        "condition": (fd.get("condition") or {}).get("text", "Unknown"),
-                    }
-            except Exception as e:
-                logger.warning("Live fetch failed for %s day %d, using mock: %s", city, i, e)
-                m = _mock_weather(city, i)
-                w = {k: m[k] for k in ("temp_c", "wind_kph", "precip_mm", "vis_km", "humidity", "condition")}
-        else:
-            m = _mock_weather(city, i)
-            w = {k: m[k] for k in ("temp_c", "wind_kph", "precip_mm", "vis_km", "humidity", "condition")}
+        w = await _get_weather_for_city(city, target_str, is_past, i)
 
         snapshots.append(DayWeatherSnapshot(
             date=target_str,
@@ -193,6 +293,10 @@ async def _build_snapshots_node(state: WeatherGraphState) -> WeatherGraphState:
 
     return {"day_snapshots": snapshots}
 
+
+# ---------------------------------------------------------------------------
+# Node 3 — compute risk per day
+# ---------------------------------------------------------------------------
 
 def _compute_risks_node(state: WeatherGraphState) -> WeatherGraphState:
     day_risks: list[DayRiskSnapshot] = []
@@ -239,6 +343,10 @@ def _compute_risks_node(state: WeatherGraphState) -> WeatherGraphState:
 
     return {"day_risks": day_risks}
 
+
+# ---------------------------------------------------------------------------
+# Node 4 — build final payload
+# ---------------------------------------------------------------------------
 
 def _build_payload_node(state: WeatherGraphState) -> WeatherGraphState:
     supplier_city       = state["supplier_city"]
@@ -305,6 +413,10 @@ def _build_payload_node(state: WeatherGraphState) -> WeatherGraphState:
     }
 
 
+# ---------------------------------------------------------------------------
+# Compile graph
+# ---------------------------------------------------------------------------
+
 _builder = StateGraph(WeatherGraphState)
 _builder.add_node("extract_params",  _extract_params_node)
 _builder.add_node("build_snapshots", _build_snapshots_node)
@@ -319,12 +431,12 @@ _builder.add_edge("build_payload",   END)
 WEATHER_GRAPH = _builder.compile()
 
 
+# ---------------------------------------------------------------------------
+# Public entry point  — signature changed, no more weather_data param
+# ---------------------------------------------------------------------------
+
 async def run_weather_agent_graph(
-    weather_data: dict[str, Any],
     scope: OemScope,
 ) -> dict[str, Any]:
-    final = await WEATHER_GRAPH.ainvoke({
-        "weather_data": weather_data,
-        "scope": scope,
-    })
+    final = await WEATHER_GRAPH.ainvoke({"scope": scope})
     return final["result"]

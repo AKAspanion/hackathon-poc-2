@@ -2,8 +2,8 @@
 
 Workflow for a single run
 --------------------------
-1. Load suppliers / materials / global context from Excel.
-2. Build per-level search queries from the Excel rows.
+1. Load suppliers from the database; derive materials from commodities.
+2. Build per-level search queries from supplier/material rows.
 3. Fetch news/trend signals via TrendDataSource (NewsAPI or mock).
 4. Construct a TrendContext with static + dynamic data.
 5. Call the multi-provider LLM client to produce structured Insight objects.
@@ -12,24 +12,24 @@ Workflow for a single run
 
 Exposed functions
 -----------------
-run_trend_insights_cycle(db, *, oem_name, excel_path) -> list[TrendInsight]
+run_trend_insights_cycle(db, *, oem_name) -> list[TrendInsight]
     Synchronous wrapper (runs asyncio internally) - safe for APScheduler.
 
-run_trend_insights_cycle_async(db, *, oem_name, excel_path) -> list[TrendInsight]
+run_trend_insights_cycle_async(db, *, oem_name) -> list[TrendInsight]
     Async version - call from FastAPI route handlers.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
-from app.config import settings
 from app.models.trend_insight import TrendInsight
-from app.data.excel import load_all_from_excel, DEFAULT_EXCEL_PATH
+from app.models.supplier import Supplier
 from app.data.trends import TrendDataSource
 from app.services.llm_client import TrendContext, TrendItem, get_llm_client, Insight
 
@@ -41,6 +41,59 @@ logger = logging.getLogger(__name__)
 _DEFAULT_OEM_NAME = "Demo Manufacturer"
 
 
+def _to_str(value: object) -> str | None:
+    """Coerce any scalar/dict/list the LLM returns into a plain string for Text columns."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value or None
+    if isinstance(value, dict):
+        # e.g. {"lead_time": 12, "production_volume": 15}
+        # → "lead_time: 12, production_volume: 15"
+        return ", ".join(f"{k}: {v}" for k, v in value.items())
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    return str(value)
+
+
+def _to_str_list(value: object) -> list[str]:
+    """Coerce LLM output to a plain Python list[str] safe for JSONB insertion.
+
+    The LLM may return:
+      - A proper Python list[str]               → use as-is
+      - A list that contains dicts              → stringify each dict
+      - A JSON-encoded string ('[\"a\", \"b\"]') → parse then coerce
+      - None / any other type                   → return []
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            return [value] if value.strip() else []
+        value = parsed
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            result.append(item)
+        elif isinstance(item, dict):
+            # e.g. {"action": "...", "title": "..."} → pick a sensible key
+            text = (
+                item.get("action")
+                or item.get("title")
+                or item.get("text")
+                or item.get("description")
+                or str(item)
+            )
+            result.append(str(text))
+        else:
+            result.append(str(item))
+    return result
+
+
 # ── Query builders ────────────────────────────────────────────────────
 
 
@@ -49,7 +102,7 @@ def _material_queries(materials: list[dict]) -> list[str]:
     for m in materials[:8]:
         name = (m.get("material_name") or "").strip()
         if name:
-            queries.append(f"{name} supply chain price trends 2025")
+            queries.append(f"{name} supply chain price trends 2026")
             queries.append(f"{name} shortage disruption")
     return list(dict.fromkeys(queries))[:12]
 
@@ -101,25 +154,62 @@ def _to_trend_item(result_dict: dict) -> TrendItem | None:
 # ── Async core ────────────────────────────────────────────────────────
 
 
+def _supplier_row_to_dict(row: Supplier) -> dict:
+    return {
+        "name": row.name or "",
+        "region": row.region or row.country or "",
+        "country": row.country or "",
+        "location": row.location or "",
+        "commodities": row.commodities or "",
+    }
+
+
+def _materials_from_supplier(row: Supplier) -> list[dict]:
+    if not row.commodities:
+        return []
+    return [
+        {"material_name": c.strip()}
+        for c in row.commodities.split(",")
+        if c.strip()
+    ]
+
+
+def _load_suppliers_from_db(db: Session) -> tuple[list[dict], list[dict]]:
+    """Query the suppliers table and return (suppliers, materials) as plain dicts.
+
+    Materials are derived from the unique commodities listed across all suppliers.
+    """
+    rows = db.query(Supplier).all()
+    suppliers: list[dict] = []
+    commodity_set: set[str] = set()
+
+    for row in rows:
+        suppliers.append(_supplier_row_to_dict(row))
+        if row.commodities:
+            for raw in row.commodities.split(","):
+                commodity = raw.strip()
+                if commodity:
+                    commodity_set.add(commodity)
+
+    materials = [{"material_name": c} for c in sorted(commodity_set)]
+    return suppliers, materials
+
+
 async def run_trend_insights_cycle_async(
     db: Session,
     *,
     oem_name: str | None = None,
-    excel_path: str | None = None,
 ) -> list[TrendInsight]:
     oem_name = oem_name or _DEFAULT_OEM_NAME
-    excel_path = excel_path or settings.trend_agent_excel_path or DEFAULT_EXCEL_PATH
 
-    logger.info("Trend insights cycle starting - oem=%s excel=%s", oem_name, excel_path)
+    logger.info("Trend insights cycle starting - oem=%s", oem_name)
 
-    # 1. Load Excel data
-    excel_data = load_all_from_excel(excel_path)
-    suppliers = excel_data["suppliers"]
-    materials = excel_data["materials"]
-    global_ctx = excel_data["global"]
+    # 1. Load suppliers and derive materials from the database
+    suppliers, materials = _load_suppliers_from_db(db)
+    global_ctx: list[dict] = []
 
     if not suppliers and not materials:
-        logger.warning("No data loaded from Excel - aborting trend cycle.")
+        logger.warning("No supplier data found in database - aborting trend cycle.")
         return []
 
     # 2. Build queries
@@ -158,7 +248,6 @@ async def run_trend_insights_cycle_async(
     # 4. Build TrendContext
     ctx = TrendContext(
         oem_name=oem_name,
-        excel_path=excel_path,
         suppliers=suppliers,
         materials=materials,
         global_context=global_ctx,
@@ -187,14 +276,13 @@ async def run_trend_insights_cycle_async(
             risk_opportunity=ins.risk_opportunity,
             title=ins.title,
             description=ins.description,
-            predicted_impact=ins.predicted_impact,
+            predicted_impact=_to_str(ins.predicted_impact),
             time_horizon=ins.time_horizon,
             severity=ins.severity,
-            recommended_actions=ins.recommended_actions,
-            source_articles=ins.source_articles,
+            recommended_actions=_to_str_list(ins.recommended_actions),
+            source_articles=_to_str_list(ins.source_articles),
             confidence=ins.confidence,
             oem_name=oem_name,
-            excel_path=excel_path,
             llm_provider=client.provider,
         )
         db.add(row)
@@ -208,6 +296,117 @@ async def run_trend_insights_cycle_async(
     return saved
 
 
+async def run_trend_insights_for_supplier_async(
+    db: Session,
+    *,
+    supplier_id: str,
+    oem_name: str | None = None,
+) -> list[TrendInsight]:
+    """Run the trend-insights cycle scoped to a single supplier row."""
+    from uuid import UUID
+
+    oem_name = oem_name or _DEFAULT_OEM_NAME
+
+    row = db.query(Supplier).filter(Supplier.id == UUID(supplier_id)).first()
+    if not row:
+        logger.warning("Supplier %s not found - aborting trend cycle.", supplier_id)
+        return []
+
+    suppliers = [_supplier_row_to_dict(row)]
+    materials = _materials_from_supplier(row)
+    global_ctx: list[dict] = []
+
+    logger.info(
+        "Trend insights cycle starting - supplier=%s oem=%s",
+        row.name,
+        oem_name,
+    )
+
+    # Build queries scoped to this one supplier
+    mat_queries = _material_queries(materials)
+    sup_queries = _supplier_queries(suppliers)
+    glb_queries = _global_queries(global_ctx)
+
+    logger.info(
+        "Querying trends: %d material, %d supplier, %d global queries",
+        len(mat_queries),
+        len(sup_queries),
+        len(glb_queries),
+    )
+
+    # Fetch trend data
+    trend_source = TrendDataSource()
+    await trend_source.initialize({})
+    raw_results = await trend_source.fetch_data(
+        {
+            "material_queries": mat_queries,
+            "supplier_queries": sup_queries,
+            "global_queries": glb_queries,
+        }
+    )
+
+    trend_items: list[TrendItem] = []
+    for result in raw_results:
+        item = _to_trend_item(
+            result.to_dict() if hasattr(result, "to_dict") else result
+        )
+        if item and item.title:
+            trend_items.append(item)
+
+    logger.info("Fetched %d trend items", len(trend_items))
+
+    ctx = TrendContext(
+        oem_name=oem_name,
+        suppliers=suppliers,
+        materials=materials,
+        global_context=global_ctx,
+        trend_items=trend_items,
+    )
+
+    client = get_llm_client()
+    logger.info("Generating insights via provider: %s", client.provider)
+    insights: list[Insight] = await client.generate_insights(ctx)
+
+    if not insights:
+        logger.warning("LLM returned no insights; using mock insights.")
+        from app.services.llm_client import _mock_insights
+
+        insights = _mock_insights(ctx)
+
+    logger.info("Received %d insights from LLM", len(insights))
+
+    saved: list[TrendInsight] = []
+    for ins in insights:
+        db_row = TrendInsight(
+            scope=ins.scope,
+            entity_name=ins.entity_name,
+            risk_opportunity=ins.risk_opportunity,
+            title=ins.title,
+            description=ins.description,
+            predicted_impact=_to_str(ins.predicted_impact),
+            time_horizon=ins.time_horizon,
+            severity=ins.severity,
+            recommended_actions=_to_str_list(ins.recommended_actions),
+            source_articles=_to_str_list(ins.source_articles),
+            confidence=ins.confidence,
+            oem_name=oem_name,
+            llm_provider=client.provider,
+        )
+        db.add(db_row)
+        saved.append(db_row)
+
+    db.commit()
+    for db_row in saved:
+        db.refresh(db_row)
+
+    logger.info(
+        "Trend insights cycle complete for supplier %s - saved %d insights.",
+        row.name,
+        len(saved),
+    )
+    return saved
+
+
 # ── Sync wrapper (for APScheduler) ───────────────────────────────────
 
 
@@ -215,12 +414,11 @@ def run_trend_insights_cycle(
     db: Session,
     *,
     oem_name: str | None = None,
-    excel_path: str | None = None,
 ) -> list[TrendInsight]:
     """Synchronous entry point safe to call from APScheduler background threads."""
     try:
         return asyncio.run(
-            run_trend_insights_cycle_async(db, oem_name=oem_name, excel_path=excel_path)
+            run_trend_insights_cycle_async(db, oem_name=oem_name)
         )
     except Exception as exc:
         logger.exception("Trend insights cycle failed: %s", exc)

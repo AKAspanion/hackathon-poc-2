@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     openai_base_url: str | None = None
-
+    
+    use_live_data: bool = False
     weather_api_key: str | None = None
     weather_days_forecast: int = 3
     news_api_key: str | None = None

@@ -1,331 +1,330 @@
-import json
+"""
+weather.py
+
+Single LangGraph: run_weather_agent_graph(weather_data, scope)
+Returns the same risk_analysis_payload format as _build_risk_analysis_payload in shipment_weather.py
+
+Mock data by default. Set USE_LIVE_DATA=true in .env for real API calls.
+"""
+
+from __future__ import annotations
+
 import logging
-from typing import TypedDict, Any
+import random
+from datetime import date, datetime, timedelta
+from typing import Any, TypedDict
 
-from langchain_core.prompts import ChatPromptTemplate
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
-from app.services.langchain_llm import get_chat_model
-from app.services.agent_orchestrator import _extract_json
+from app.config import settings
+from app.core.risk_engine import compute_risk
+from app.schemas.weather_agent import (
+    DayRiskSnapshot,
+    DayWeatherSnapshot,
+    RiskLevel,
+    RiskSummary,
+)
 from app.services.agent_types import OemScope
 
 logger = logging.getLogger(__name__)
 
 
-class WeatherItem(TypedDict):
-    city: str
-    country: str
-    temperature: float | int | None
-    condition: str
-    description: str
-    humidity: int | None
-    windSpeed: float | int | None
-    visibility: int | None
+def _use_live_data() -> bool:
+    return getattr(settings, "use_live_data", False)
 
 
-class WeatherAgentState(TypedDict, total=False):
+_SCENARIOS = [
+    {"condition": "Sunny",         "temp_c": 28.0, "wind_kph": 12.0, "precip_mm": 0.0,  "vis_km": 10.0, "humidity": 45, "code": 1000},
+    {"condition": "Partly Cloudy", "temp_c": 24.0, "wind_kph": 18.0, "precip_mm": 0.5,  "vis_km": 9.0,  "humidity": 60, "code": 1003},
+    {"condition": "Overcast",      "temp_c": 20.0, "wind_kph": 25.0, "precip_mm": 2.0,  "vis_km": 7.0,  "humidity": 72, "code": 1009},
+    {"condition": "Moderate Rain", "temp_c": 18.0, "wind_kph": 35.0, "precip_mm": 12.0, "vis_km": 4.0,  "humidity": 88, "code": 1189},
+    {"condition": "Heavy Rain",    "temp_c": 17.0, "wind_kph": 55.0, "precip_mm": 28.0, "vis_km": 2.0,  "humidity": 95, "code": 1195},
+    {"condition": "Thunderstorm",  "temp_c": 22.0, "wind_kph": 72.0, "precip_mm": 40.0, "vis_km": 1.5,  "humidity": 97, "code": 1276},
+    {"condition": "Fog",           "temp_c": 15.0, "wind_kph": 8.0,  "precip_mm": 0.2,  "vis_km": 0.8,  "humidity": 92, "code": 1135},
+    {"condition": "Light Snow",    "temp_c": -2.0, "wind_kph": 22.0, "precip_mm": 3.0,  "vis_km": 3.0,  "humidity": 80, "code": 1213},
+]
+
+
+def _mock_weather(city: str, day_index: int) -> dict[str, Any]:
+    rng = random.Random(hash(city.lower()) + day_index)
+    s = rng.choices(_SCENARIOS, weights=[30, 20, 15, 15, 8, 5, 4, 3], k=1)[0].copy()
+    return {
+        "temp_c":    round(s["temp_c"]    + rng.uniform(-2, 2),   1),
+        "wind_kph":  round(max(0, s["wind_kph"]  + rng.uniform(-5, 5)),   1),
+        "precip_mm": round(max(0, s["precip_mm"] + rng.uniform(-1, 2)),   1),
+        "vis_km":    round(max(0.5, s["vis_km"]  + rng.uniform(-0.5, 0.5)), 1),
+        "humidity":  min(100, max(20, s["humidity"] + rng.randint(-5, 5))),
+        "condition": s["condition"],
+        "code":      s["code"],
+    }
+
+
+class WeatherGraphState(TypedDict, total=False):
+    weather_data: dict[str, Any]
     scope: OemScope
-    weather_data: dict[str, list[dict]]
-    weather_items: list[WeatherItem]
-    weather_risks: list[dict]
-    weather_opportunities: list[dict]
+    supplier_city: str
+    oem_city: str
+    shipment_start_date: str
+    transit_days: int
+    day_snapshots: list[DayWeatherSnapshot]
+    day_risks: list[DayRiskSnapshot]
+    result: dict[str, Any]
 
 
-def _build_weather_items_node(state: WeatherAgentState) -> WeatherAgentState:
+def _extract_params_node(state: WeatherGraphState) -> WeatherGraphState:
     """
-    Normalize raw weather data into WeatherItem structures.
+    Extract supplier_city, oem_city, start_date, transit_days.
+    Reads from weather_data first, falls back to scope.
+    scope["cities"][0] = OEM city, scope["cities"][1] = first supplier city.
     """
-    raw = state.get("weather_data") or {}
-    items = raw.get("weather") or []
+    weather_data = state.get("weather_data") or {}
+    scope = state.get("scope") or {}
 
-    normalized: list[WeatherItem] = []
-    for item in items:
-        data = item.get("data") if isinstance(item, dict) else item
-        if not isinstance(data, dict):
-            continue
-        normalized.append(
-            {
-                "city": str(data.get("city") or ""),
-                "country": str(data.get("country") or ""),
-                "temperature": data.get("temperature"),
-                "condition": str(data.get("condition") or ""),
-                "description": str(data.get("description") or ""),
-                "humidity": data.get("humidity"),
-                "windSpeed": data.get("windSpeed"),
-                "visibility": data.get("visibility"),
-            }
+    cities = scope.get("cities") or []
+    oem_city_from_scope      = cities[0] if len(cities) > 0 else "Unknown"
+    supplier_city_from_scope = cities[1] if len(cities) > 1 else oem_city_from_scope
+
+    supplier_city       = weather_data.get("supplier_city")       or supplier_city_from_scope
+    oem_city            = weather_data.get("oem_city")            or oem_city_from_scope
+    shipment_start_date = weather_data.get("shipment_start_date") or date.today().strftime("%Y-%m-%d")
+    transit_days        = int(weather_data.get("transit_days")    or 5)
+
+    return {
+        "supplier_city":       supplier_city,
+        "oem_city":            oem_city,
+        "shipment_start_date": shipment_start_date,
+        "transit_days":        transit_days,
+    }
+
+
+async def _build_snapshots_node(state: WeatherGraphState) -> WeatherGraphState:
+    supplier_city = state["supplier_city"]
+    oem_city      = state["oem_city"]
+    transit_days  = state["transit_days"]
+    start_date    = datetime.strptime(state["shipment_start_date"], "%Y-%m-%d").date()
+    today         = date.today()
+
+    waypoints = []
+    for i in range(transit_days):
+        if i == 0:
+            waypoints.append(supplier_city)
+        elif i == transit_days - 1:
+            waypoints.append(oem_city)
+        else:
+            waypoints.append(supplier_city if i < transit_days // 2 else oem_city)
+
+    snapshots: list[DayWeatherSnapshot] = []
+
+    for i, city in enumerate(waypoints):
+        target_date = start_date + timedelta(days=i)
+        target_str  = target_date.strftime("%Y-%m-%d")
+        is_past     = target_date < today
+
+        location_label = (
+            f"{supplier_city} (Origin)"   if i == 0                else
+            f"{oem_city} (Destination)"   if i == transit_days - 1 else
+            f"In Transit - Day {i + 1}"
         )
 
-    return {"weather_items": normalized}
-
-
-_prompt: ChatPromptTemplate | None = None
-
-
-def _get_langchain_chain() -> Any | None:
-    """
-    Build a LangChain chain for weather exposure analysis.
-    Uses Anthropic or Ollama per settings.llm_provider (see langchain_llm.get_chat_model).
-    """
-    global _prompt
-
-    llm = get_chat_model()
-    if llm is None:
-        return None
-
-    if _prompt is None:
-        _prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    (
-                        "You are a Weather Agent for a manufacturing "
-                        "supply chain. You receive normalized weather "
-                        "data for shipment routes and must produce "
-                        "structured weather risk pointers and potential "
-                        "opportunities. Focus on:\n"
-                        "- weather_exposure_score\n"
-                        "- storm_risk\n"
-                        "- temperature_extreme_days\n\n"
-                        "Return ONLY valid JSON, no commentary."
-                    ),
-                ),
-                (
-                    "user",
-                    (
-                        "Analyze the following per-city weather data for "
-                        "supply chain weather risks and opportunities.\n\n"
-                        "Weather JSON:\n{weather_items_json}\n\n"
-                        "Return JSON of shape:\n"
-                        "{{\n"
-                        '  "risks": [\n'
-                        "    {{\n"
-                        '      "title": str,\n'
-                        '      "description": str,\n'
-                        '      "severity": "low" | "medium" | "high" '
-                        '| "critical",\n'
-                        '      "affectedRegion": str | null,\n'
-                        '      "affectedSupplier": str | null,\n'
-                        '      "estimatedImpact": str | null,\n'
-                        '      "estimatedCost": number | null,\n'
-                        '      "weather_exposure_score": number | null,\n'
-                        '      "storm_risk": number | null,\n'
-                        '      "temperature_extreme_days": number | null\n'
-                        "    }}\n"
-                        "  ],\n"
-                        '  "opportunities": [\n'
-                        "    {{\n"
-                        '      "title": str,\n'
-                        '      "description": str,\n'
-                        '      "type": "cost_saving" | "time_saving" '
-                        '| "quality_improvement" | "market_expansion" '
-                        '| "supplier_diversification",\n'
-                        '      "affectedRegion": str | null,\n'
-                        '      "potentialBenefit": str | null,\n'
-                        '      "estimatedValue": number | null\n'
-                        "    }}\n"
-                        "  ]\n"
-                        "}}\n"
-                        "If none, use empty arrays."
-                    ),
-                ),
-            ]
-        )
-
-    return _prompt | llm
-
-
-def _heuristic_weather_from_items(
-    items: list[WeatherItem],
-) -> tuple[list[dict], list[dict]]:
-    """
-    Simple deterministic fallback when LLM is not configured.
-    """
-    risks: list[dict] = []
-    opps: list[dict] = []
-
-    for item in items:
-        city = item["city"] or "Unknown city"
-        temp = item.get("temperature") or 0
-        condition = (item.get("condition") or "").lower()
-
-        exposure = 0
-        storm_risk = 0
-        extreme_days = 0
-
-        if condition in {"storm", "rain"}:
-            exposure += 40
-            storm_risk = 70 if condition == "storm" else 40
-        if temp <= 0 or temp >= 35:
-            exposure += 30
-            extreme_days = 2
-
-        if exposure >= 40:
-            risks.append(
-                {
-                    "title": f"Weather risk for {city}",
-                    "description": (
-                        f"Adverse weather in {city} with condition "
-                        f"{item.get('condition')} and temperature {temp}°C."
-                    ),
-                    "severity": "high" if exposure >= 70 else "medium",
-                    "affectedRegion": city,
-                    "affectedSupplier": None,
-                    "estimatedImpact": (
-                        "Potential delays due to local weather conditions."
-                    ),
-                    "estimatedCost": None,
-                    "weather_exposure_score": exposure,
-                    "storm_risk": storm_risk,
-                    "temperature_extreme_days": extreme_days,
-                }
-            )
-        else:
-            opps.append(
-                {
-                    "title": f"Stable weather window in {city}",
-                    "description": (
-                        f"Weather in {city} appears stable for planned "
-                        f"shipments with condition {item.get('condition')}."
-                    ),
-                    "type": "time_saving",
-                    "affectedRegion": city,
-                    "potentialBenefit": (
-                        "Opportunity to prioritize shipments through this "
-                        "location while conditions are favorable."
-                    ),
-                    "estimatedValue": None,
-                }
-            )
-
-    return risks, opps
-
-
-async def _weather_risk_llm_node(
-    state: WeatherAgentState,
-) -> WeatherAgentState:
-    """
-    Convert WeatherItem list into risks and opportunities using LangChain.
-    Falls back to simple heuristics when Anthropic is not configured.
-    """
-    items = state.get("weather_items") or []
-    if not items:
-        return {"weather_risks": [], "weather_opportunities": []}
-
-    chain = _get_langchain_chain()
-    if not chain:
-        risks, opps = _heuristic_weather_from_items(items)
-        return {"weather_risks": risks, "weather_opportunities": opps}
-
-    try:
-        items_json = json.dumps(items, indent=2)
-        msg = await chain.ainvoke({"weather_items_json": items_json})
-
-        content = msg.content
-        if isinstance(content, str):
-            raw_text = content
-        else:
-            parts: list[str] = []
-            for block in content:
-                if isinstance(block, dict) and "text" in block:
-                    parts.append(str(block.get("text") or ""))
+        if _use_live_data():
+            try:
+                from app.services.weather_service import (
+                    get_current_weather,
+                    get_forecast,
+                    get_historical_weather,
+                )
+                if target_date == today:
+                    raw = await get_current_weather(city) or {}
+                    cur = raw.get("current") or {}
+                    w = {
+                        "temp_c":    float(cur.get("temp_c", 25)),
+                        "wind_kph":  float(cur.get("wind_kph", 10)),
+                        "precip_mm": float(cur.get("precip_mm", 0)),
+                        "vis_km":    float(cur.get("vis_km", 10)),
+                        "humidity":  int(cur.get("humidity", 50)),
+                        "condition": (cur.get("condition") or {}).get("text", "Unknown"),
+                    }
+                elif is_past:
+                    raw = await get_historical_weather(city, target_str) or {}
+                    fd  = (((raw.get("forecast") or {}).get("forecastday") or [{}])[0].get("day") or {})
+                    w = {
+                        "temp_c":    float(fd.get("avgtemp_c", 25)),
+                        "wind_kph":  float(fd.get("maxwind_kph", 10)),
+                        "precip_mm": float(fd.get("totalprecip_mm", 0)),
+                        "vis_km":    float(fd.get("avgvis_km", 10)),
+                        "humidity":  int(fd.get("avghumidity", 50)),
+                        "condition": (fd.get("condition") or {}).get("text", "Unknown"),
+                    }
                 else:
-                    parts.append(str(block))
-            raw_text = "".join(parts)
+                    raw = await get_forecast(city, days=14) or {}
+                    fd  = next(
+                        (d["day"] for d in (raw.get("forecast") or {}).get("forecastday") or [] if d.get("date") == target_str),
+                        {},
+                    )
+                    w = {
+                        "temp_c":    float(fd.get("avgtemp_c", 25)),
+                        "wind_kph":  float(fd.get("maxwind_kph", 10)),
+                        "precip_mm": float(fd.get("totalprecip_mm", 0)),
+                        "vis_km":    float(fd.get("avgvis_km", 10)),
+                        "humidity":  int(fd.get("avghumidity", 50)),
+                        "condition": (fd.get("condition") or {}).get("text", "Unknown"),
+                    }
+            except Exception as e:
+                logger.warning("Live fetch failed for %s day %d, using mock: %s", city, i, e)
+                m = _mock_weather(city, i)
+                w = {k: m[k] for k in ("temp_c", "wind_kph", "precip_mm", "vis_km", "humidity", "condition")}
+        else:
+            m = _mock_weather(city, i)
+            w = {k: m[k] for k in ("temp_c", "wind_kph", "precip_mm", "vis_km", "humidity", "condition")}
 
-        parsed = _extract_json(raw_text) or {}
-        raw_risks = parsed.get("risks") or []
-        raw_opps = parsed.get("opportunities") or []
+        snapshots.append(DayWeatherSnapshot(
+            date=target_str,
+            day_number=i + 1,
+            location_name=location_label,
+            estimated_location=city,
+            condition=w["condition"],
+            temp_c=w["temp_c"],
+            wind_kph=w["wind_kph"],
+            precip_mm=w["precip_mm"],
+            vis_km=w["vis_km"],
+            humidity=w["humidity"],
+            is_historical=is_past,
+        ))
 
-        risks: list[dict] = []
-        opps: list[dict] = []
-
-        for r in raw_risks:
-            if not isinstance(r, dict):
-                continue
-            title = (str(r.get("title") or "")).strip()
-            desc = (str(r.get("description") or "")).strip()
-            if not title or not desc:
-                continue
-            risks.append(r)
-
-        for o in raw_opps:
-            if not isinstance(o, dict):
-                continue
-            title = (str(o.get("title") or "")).strip()
-            desc = (str(o.get("description") or "")).strip()
-            if not title or not desc:
-                continue
-            opps.append(o)
-
-        return {"weather_risks": risks, "weather_opportunities": opps}
-    except Exception as exc:
-        logger.exception("WeatherAgent LLM error: %s", exc)
-        risks, opps = _heuristic_weather_from_items(items)
-        return {"weather_risks": risks, "weather_opportunities": opps}
+    return {"day_snapshots": snapshots}
 
 
-_builder = StateGraph(WeatherAgentState)
-_builder.add_node("build_items", _build_weather_items_node)
-_builder.add_node("weather_risk_llm", _weather_risk_llm_node)
-_builder.set_entry_point("build_items")
-_builder.add_edge("build_items", "weather_risk_llm")
-_builder.add_edge("weather_risk_llm", END)
+def _compute_risks_node(state: WeatherGraphState) -> WeatherGraphState:
+    day_risks: list[DayRiskSnapshot] = []
+
+    for snap in (state.get("day_snapshots") or []):
+        risk_raw = compute_risk({"current": {
+            "temp_c":      snap.temp_c,
+            "feelslike_c": snap.temp_c,
+            "wind_kph":    snap.wind_kph,
+            "gust_kph":    snap.wind_kph * 1.3,
+            "precip_mm":   snap.precip_mm,
+            "vis_km":      snap.vis_km,
+            "humidity":    snap.humidity,
+            "cloud": 50, "pressure_mb": 1013, "uv": 5,
+            "condition": {"code": 1000, "text": snap.condition},
+        }})
+
+        factors = [
+            f.model_dump() if hasattr(f, "model_dump") else f
+            for f in risk_raw.get("factors", [])
+        ]
+        risk_dict = {**risk_raw, "factors": factors}
+        if hasattr(risk_dict.get("overall_level"), "value"):
+            risk_dict["overall_level"] = risk_dict["overall_level"].value
+        for f in risk_dict["factors"]:
+            if hasattr(f.get("level"), "value"):
+                f["level"] = f["level"].value
+
+        risk_summary = RiskSummary(**risk_dict)
+        concern = risk_summary.primary_concerns[0] if risk_summary.primary_concerns else "No significant risk"
+
+        day_risks.append(DayRiskSnapshot(
+            date=snap.date,
+            day_number=snap.day_number,
+            location_name=snap.location_name,
+            weather=snap,
+            risk=risk_summary,
+            risk_summary_text=(
+                f"Day {snap.day_number} ({snap.date}): {snap.location_name} — "
+                f"{snap.condition}, {snap.temp_c:.1f}C, wind {snap.wind_kph:.0f} km/h. "
+                f"Risk: {risk_summary.overall_level} ({risk_summary.overall_score:.0f}/100). {concern}"
+            ),
+        ))
+
+    return {"day_risks": day_risks}
+
+
+def _build_payload_node(state: WeatherGraphState) -> WeatherGraphState:
+    supplier_city       = state["supplier_city"]
+    oem_city            = state["oem_city"]
+    shipment_start_date = state["shipment_start_date"]
+    transit_days        = state["transit_days"]
+    days                = state.get("day_risks") or []
+
+    peak      = max(days, key=lambda d: d.risk.overall_score) if days else None
+    avg_score = sum(d.risk.overall_score for d in days) / len(days) if days else 0
+    high_days = [d for d in days if d.risk.overall_level in (RiskLevel.HIGH, RiskLevel.CRITICAL)]
+
+    all_concerns: list[str] = []
+    all_actions:  list[str] = []
+    factor_max = {f: 0.0 for f in ["transportation", "power_outage", "production", "port_and_route", "raw_material_delay"]}
+
+    for d in days:
+        all_concerns.extend(d.risk.primary_concerns)
+        all_actions.extend(d.risk.suggested_actions)
+        for factor in d.risk.factors:
+            if factor.factor in factor_max:
+                factor_max[factor.factor] = max(factor_max[factor.factor], factor.score)
+
+    return {
+        "result": {
+            "shipment_metadata": {
+                "supplier_city": supplier_city,
+                "oem_city":      oem_city,
+                "start_date":    shipment_start_date,
+                "transit_days":  transit_days,
+            },
+            "exposure_summary": {
+                "average_risk_score":  round(avg_score, 1),
+                "peak_risk_score":     round(peak.risk.overall_score, 1) if peak else 0,
+                "peak_risk_day":       peak.day_number if peak else None,
+                "peak_risk_date":      peak.date       if peak else None,
+                "high_risk_day_count": len(high_days),
+                "high_risk_dates":     [d.date for d in high_days],
+            },
+            "risk_factors_max":    factor_max,
+            "primary_concerns":    list(dict.fromkeys(all_concerns))[:6],
+            "recommended_actions": list(dict.fromkeys(all_actions))[:6],
+            "daily_timeline": [
+                {
+                    "day":           d.day_number,
+                    "date":          d.date,
+                    "location":      d.location_name,
+                    "is_historical": d.weather.is_historical,
+                    "weather": {
+                        "condition": d.weather.condition,
+                        "temp_c":    d.weather.temp_c,
+                        "wind_kph":  d.weather.wind_kph,
+                        "precip_mm": d.weather.precip_mm,
+                        "vis_km":    d.weather.vis_km,
+                        "humidity":  d.weather.humidity,
+                    },
+                    "risk_score":  d.risk.overall_score,
+                    "risk_level":  d.risk.overall_level,
+                    "key_concern": d.risk.primary_concerns[0] if d.risk.primary_concerns else "No significant risk",
+                }
+                for d in days
+            ],
+        }
+    }
+
+
+_builder = StateGraph(WeatherGraphState)
+_builder.add_node("extract_params",  _extract_params_node)
+_builder.add_node("build_snapshots", _build_snapshots_node)
+_builder.add_node("compute_risks",   _compute_risks_node)
+_builder.add_node("build_payload",   _build_payload_node)
+_builder.set_entry_point("extract_params")
+_builder.add_edge("extract_params",  "build_snapshots")
+_builder.add_edge("build_snapshots", "compute_risks")
+_builder.add_edge("compute_risks",   "build_payload")
+_builder.add_edge("build_payload",   END)
 
 WEATHER_GRAPH = _builder.compile()
 
 
 async def run_weather_agent_graph(
-    weather_data: dict[str, list[dict]],
+    weather_data: dict[str, Any],
     scope: OemScope,
-) -> dict[str, list[dict]]:
-    """
-    Orchestrate the Weather Agent using LangGraph and LangChain.
-    """
-    initial_state: WeatherAgentState = {
-        "scope": scope,
+) -> dict[str, Any]:
+    final = await WEATHER_GRAPH.ainvoke({
         "weather_data": weather_data,
-    }
-
-    final_state = await WEATHER_GRAPH.ainvoke(initial_state)
-
-    risks = final_state.get("weather_risks") or []
-    opps = final_state.get("weather_opportunities") or []
-
-    risks_for_db: list[dict] = []
-    opps_for_db: list[dict] = []
-
-    for r in risks:
-        db_risk = {
-            "title": r["title"],
-            "description": r["description"],
-            "severity": r.get("severity", "medium"),
-            "affectedRegion": r.get("affectedRegion"),
-            "affectedSupplier": r.get("affectedSupplier"),
-            "estimatedImpact": r.get("estimatedImpact"),
-            "estimatedCost": r.get("estimatedCost"),
-            "sourceType": "weather",
-            "sourceData": {
-                "weatherExposure": {
-                    "weather_exposure_score": r.get("weather_exposure_score"),
-                    "storm_risk": r.get("storm_risk"),
-                    "temperature_extreme_days": r.get("temperature_extreme_days"),
-                }
-            },
-        }
-        risks_for_db.append(db_risk)
-
-    for o in opps:
-        db_opp = {
-            "title": o["title"],
-            "description": o["description"],
-            "type": o.get("type", "time_saving"),
-            "affectedRegion": o.get("affectedRegion"),
-            "potentialBenefit": o.get("potentialBenefit"),
-            "estimatedValue": o.get("estimatedValue"),
-            "sourceType": "weather",
-            "sourceData": None,
-        }
-        opps_for_db.append(db_opp)
-
-    return {"risks": risks_for_db, "opportunities": opps_for_db}
+        "scope": scope,
+    })
+    return final["result"]

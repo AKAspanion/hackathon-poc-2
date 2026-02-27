@@ -1,14 +1,10 @@
 """Trend-insights orchestration layer.
 
-Workflow for a single run
---------------------------
-1. Load suppliers from the database; derive materials from commodities.
-2. Build per-level search queries from supplier/material rows.
-3. Fetch news/trend signals via TrendDataSource (NewsAPI or mock).
-4. Construct a TrendContext with static + dynamic data.
-5. Call the multi-provider LLM client to produce structured Insight objects.
-6. Persist each Insight as a TrendInsight database row.
-7. Return the list of saved rows.
+Delegates all fetch + LLM work to the LangGraph agent in app.agents.trend.
+This module is responsible for:
+1. Loading supplier/material data from the database.
+2. Calling run_trend_agent_graph() with the loaded context.
+3. Persisting the returned insight dicts as TrendInsight database rows.
 
 Exposed functions
 -----------------
@@ -17,6 +13,9 @@ run_trend_insights_cycle(db, *, oem_name) -> list[TrendInsight]
 
 run_trend_insights_cycle_async(db, *, oem_name) -> list[TrendInsight]
     Async version - call from FastAPI route handlers.
+
+run_trend_insights_for_supplier_async(db, *, supplier_id, oem_name) -> list[TrendInsight]
+    Per-supplier variant triggered by UI click.
 """
 
 from __future__ import annotations
@@ -24,17 +23,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
 from app.models.trend_insight import TrendInsight
 from app.models.supplier import Supplier
-from app.data.trends import TrendDataSource
-from app.services.llm_client import TrendContext, TrendItem, get_llm_client, Insight
-
-if TYPE_CHECKING:
-    pass
+from app.agents.trend import run_trend_agent_graph
 
 logger = logging.getLogger(__name__)
 
@@ -94,63 +88,6 @@ def _to_str_list(value: object) -> list[str]:
     return result
 
 
-# ── Query builders ────────────────────────────────────────────────────
-
-
-def _material_queries(materials: list[dict]) -> list[str]:
-    queries = []
-    for m in materials[:8]:
-        name = (m.get("material_name") or "").strip()
-        if name:
-            queries.append(f"{name} supply chain price trends 2026")
-            queries.append(f"{name} shortage disruption")
-    return list(dict.fromkeys(queries))[:12]
-
-
-def _supplier_queries(suppliers: list[dict]) -> list[str]:
-    queries = []
-    for s in suppliers[:8]:
-        name = (s.get("name") or "").strip()
-        region = (s.get("region") or s.get("country") or "").strip()
-        if name:
-            queries.append(f"{name} supply chain disruption")
-        if region:
-            queries.append(f"{region} manufacturing logistics risk")
-    return list(dict.fromkeys(queries))[:12]
-
-
-def _global_queries(global_ctx: list[dict]) -> list[str]:
-    base = [
-        "global supply chain disruption 2025",
-        "trade tariff geopolitical risk manufacturing",
-        "shipping freight rates Red Sea 2025",
-    ]
-    for g in global_ctx[:5]:
-        trend = (g.get("macro_trend") or "").strip()
-        if trend:
-            base.append(trend[:80])
-    return list(dict.fromkeys(base))[:10]
-
-
-# ── Trend item normaliser (DataSourceResult → TrendItem) ──────────────
-
-
-def _to_trend_item(result_dict: dict) -> TrendItem | None:
-    data = result_dict.get("data") or {}
-    if not data:
-        return None
-    return TrendItem(
-        title=data.get("title") or "",
-        summary=data.get("summary") or data.get("description") or "",
-        source=data.get("source") or "Unknown",
-        published_at=data.get("published_at") or result_dict.get("timestamp") or "",
-        level=data.get("level") or "global",
-        query=data.get("query") or "",
-        url=data.get("url"),
-        relevance_score=float(data.get("relevance_score") or 0.7),
-    )
-
-
 # ── Async core ────────────────────────────────────────────────────────
 
 
@@ -206,84 +143,37 @@ async def run_trend_insights_cycle_async(
 
     # 1. Load suppliers and derive materials from the database
     suppliers, materials = _load_suppliers_from_db(db)
-    global_ctx: list[dict] = []
 
     if not suppliers and not materials:
         logger.warning("No supplier data found in database - aborting trend cycle.")
         return []
 
-    # 2. Build queries
-    mat_queries = _material_queries(materials)
-    sup_queries = _supplier_queries(suppliers)
-    glb_queries = _global_queries(global_ctx)
-
-    logger.info(
-        "Querying trends: %d material, %d supplier, %d global queries",
-        len(mat_queries),
-        len(sup_queries),
-        len(glb_queries),
-    )
-
-    # 3. Fetch trend data
-    trend_source = TrendDataSource()
-    await trend_source.initialize({})
-    raw_results = await trend_source.fetch_data(
-        {
-            "material_queries": mat_queries,
-            "supplier_queries": sup_queries,
-            "global_queries": glb_queries,
-        }
-    )
-
-    trend_items: list[TrendItem] = []
-    for result in raw_results:
-        item = _to_trend_item(
-            result.to_dict() if hasattr(result, "to_dict") else result
-        )
-        if item and item.title:
-            trend_items.append(item)
-
-    logger.info("Fetched %d trend items", len(trend_items))
-
-    # 4. Build TrendContext
-    ctx = TrendContext(
-        oem_name=oem_name,
+    # 2. Run the LangGraph trend agent (fetch + merge + LLM in one graph)
+    logger.info("Running TrendGraph for oem=%s", oem_name)
+    raw_insights = await run_trend_agent_graph(
         suppliers=suppliers,
         materials=materials,
-        global_context=global_ctx,
-        trend_items=trend_items,
+        oem_name=oem_name,
     )
+    logger.info("TrendGraph returned %d insights", len(raw_insights))
 
-    # 5. Call LLM
-    client = get_llm_client()
-    logger.info("Generating insights via provider: %s", client.provider)
-    insights: list[Insight] = await client.generate_insights(ctx)
-
-    if not insights:
-        logger.warning("LLM returned no insights; using mock insights.")
-        from app.services.llm_client import _mock_insights
-
-        insights = _mock_insights(ctx)
-
-    logger.info("Received %d insights from LLM", len(insights))
-
-    # 6. Persist
+    # 3. Persist
     saved: list[TrendInsight] = []
-    for ins in insights:
+    for ins in raw_insights:
         row = TrendInsight(
-            scope=ins.scope,
-            entity_name=ins.entity_name,
-            risk_opportunity=ins.risk_opportunity,
-            title=ins.title,
-            description=ins.description,
-            predicted_impact=_to_str(ins.predicted_impact),
-            time_horizon=ins.time_horizon,
-            severity=ins.severity,
-            recommended_actions=_to_str_list(ins.recommended_actions),
-            source_articles=_to_str_list(ins.source_articles),
-            confidence=ins.confidence,
+            scope=ins.get("scope", "global"),
+            entity_name=ins.get("entity_name"),
+            risk_opportunity=ins.get("risk_opportunity", "risk"),
+            title=ins.get("title", "Untitled"),
+            description=ins.get("description"),
+            predicted_impact=_to_str(ins.get("predicted_impact")),
+            time_horizon=ins.get("time_horizon"),
+            severity=ins.get("severity"),
+            recommended_actions=_to_str_list(ins.get("recommended_actions")),
+            source_articles=_to_str_list(ins.get("source_articles")),
+            confidence=float(ins.get("confidence") or 0.7),
             oem_name=oem_name,
-            llm_provider=client.provider,
+            llm_provider="langgraph",
         )
         db.add(row)
         saved.append(row)
@@ -314,7 +204,6 @@ async def run_trend_insights_for_supplier_async(
 
     suppliers = [_supplier_row_to_dict(row)]
     materials = _materials_from_supplier(row)
-    global_ctx: list[dict] = []
 
     logger.info(
         "Trend insights cycle starting - supplier=%s oem=%s",
@@ -322,75 +211,31 @@ async def run_trend_insights_for_supplier_async(
         oem_name,
     )
 
-    # Build queries scoped to this one supplier
-    mat_queries = _material_queries(materials)
-    sup_queries = _supplier_queries(suppliers)
-    glb_queries = _global_queries(global_ctx)
-
-    logger.info(
-        "Querying trends: %d material, %d supplier, %d global queries",
-        len(mat_queries),
-        len(sup_queries),
-        len(glb_queries),
-    )
-
-    # Fetch trend data
-    trend_source = TrendDataSource()
-    await trend_source.initialize({})
-    raw_results = await trend_source.fetch_data(
-        {
-            "material_queries": mat_queries,
-            "supplier_queries": sup_queries,
-            "global_queries": glb_queries,
-        }
-    )
-
-    trend_items: list[TrendItem] = []
-    for result in raw_results:
-        item = _to_trend_item(
-            result.to_dict() if hasattr(result, "to_dict") else result
-        )
-        if item and item.title:
-            trend_items.append(item)
-
-    logger.info("Fetched %d trend items", len(trend_items))
-
-    ctx = TrendContext(
-        oem_name=oem_name,
+    # Run the LangGraph trend agent scoped to this supplier
+    logger.info("Running TrendGraph for supplier=%s oem=%s", row.name, oem_name)
+    raw_insights = await run_trend_agent_graph(
         suppliers=suppliers,
         materials=materials,
-        global_context=global_ctx,
-        trend_items=trend_items,
+        oem_name=oem_name,
     )
-
-    client = get_llm_client()
-    logger.info("Generating insights via provider: %s", client.provider)
-    insights: list[Insight] = await client.generate_insights(ctx)
-
-    if not insights:
-        logger.warning("LLM returned no insights; using mock insights.")
-        from app.services.llm_client import _mock_insights
-
-        insights = _mock_insights(ctx)
-
-    logger.info("Received %d insights from LLM", len(insights))
+    logger.info("TrendGraph returned %d insights", len(raw_insights))
 
     saved: list[TrendInsight] = []
-    for ins in insights:
+    for ins in raw_insights:
         db_row = TrendInsight(
-            scope=ins.scope,
-            entity_name=ins.entity_name,
-            risk_opportunity=ins.risk_opportunity,
-            title=ins.title,
-            description=ins.description,
-            predicted_impact=_to_str(ins.predicted_impact),
-            time_horizon=ins.time_horizon,
-            severity=ins.severity,
-            recommended_actions=_to_str_list(ins.recommended_actions),
-            source_articles=_to_str_list(ins.source_articles),
-            confidence=ins.confidence,
+            scope=ins.get("scope", "global"),
+            entity_name=ins.get("entity_name"),
+            risk_opportunity=ins.get("risk_opportunity", "risk"),
+            title=ins.get("title", "Untitled"),
+            description=ins.get("description"),
+            predicted_impact=_to_str(ins.get("predicted_impact")),
+            time_horizon=ins.get("time_horizon"),
+            severity=ins.get("severity"),
+            recommended_actions=_to_str_list(ins.get("recommended_actions")),
+            source_articles=_to_str_list(ins.get("source_articles")),
+            confidence=float(ins.get("confidence") or 0.7),
             oem_name=oem_name,
-            llm_provider=client.provider,
+            llm_provider="langgraph",
         )
         db.add(db_row)
         saved.append(db_row)

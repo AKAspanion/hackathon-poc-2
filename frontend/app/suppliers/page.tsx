@@ -300,10 +300,11 @@ export default function SuppliersPage() {
                   {suppliers.map((supplier) => (
                     <tr
                       key={supplier.id}
-                      className="hover:bg-off-white dark:hover:bg-gray-700/30 transition-colors"
+                      onClick={() => router.push(`/suppliers/${supplier.id}`)}
+                      className="hover:bg-off-white dark:hover:bg-gray-700/30 transition-colors cursor-pointer"
                     >
                       <td className="px-6 py-4">
-                        <span className="font-medium text-dark-gray dark:text-gray-200">
+                        <span className="font-medium text-dark-gray dark:text-gray-200 hover:text-primary-dark dark:hover:text-primary-light">
                           {supplier.name}
                         </span>
                       </td>

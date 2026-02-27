@@ -124,6 +124,33 @@ def get_one(db: Session, id: UUID, oem_id: UUID) -> Supplier | None:
     )
 
 
+def update_one(
+    db: Session,
+    id: UUID,
+    oem_id: UUID,
+    data: dict,
+) -> Supplier | None:
+    supplier = get_one(db, id, oem_id)
+    if not supplier:
+        return None
+    allowed = {"name", "location", "city", "country", "region", "commodities"}
+    for key, value in data.items():
+        if key in allowed:
+            setattr(supplier, key, value)
+    db.commit()
+    db.refresh(supplier)
+    return supplier
+
+
+def delete_one(db: Session, id: UUID, oem_id: UUID) -> bool:
+    supplier = get_one(db, id, oem_id)
+    if not supplier:
+        return False
+    db.delete(supplier)
+    db.commit()
+    return True
+
+
 def get_risks_by_supplier(db: Session) -> dict:
     """
     Lightweight aggregation used by the existing UI to show simple counts.

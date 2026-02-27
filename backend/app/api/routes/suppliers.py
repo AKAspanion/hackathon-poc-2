@@ -1,5 +1,7 @@
 from uuid import UUID
+from typing import Optional
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -9,9 +11,20 @@ from app.services.suppliers import (
     get_all,
     get_one,
     upload_csv,
+    update_one,
+    delete_one,
     get_risks_by_supplier,
     get_swarm_summaries_by_supplier,
 )
+
+
+class SupplierUpdate(BaseModel):
+    name: Optional[str] = None
+    location: Optional[str] = None
+    city: Optional[str] = None
+    country: Optional[str] = None
+    region: Optional[str] = None
+    commodities: Optional[str] = None
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 
@@ -103,3 +116,57 @@ def get_supplier_by_id(
         ),
         "swarm": swarm_map.get(supplier.name),
     }
+
+
+def _format_supplier(supplier, risk_map, swarm_map):
+    return {
+        **{
+            "id": str(supplier.id),
+            "oemId": str(supplier.oemId) if supplier.oemId else None,
+            "name": supplier.name,
+            "location": supplier.location,
+            "city": supplier.city,
+            "country": supplier.country,
+            "region": supplier.region,
+            "commodities": supplier.commodities,
+            "metadata": supplier.metadata_,
+            "latestRiskScore": float(supplier.latestRiskScore)
+            if supplier.latestRiskScore is not None
+            else None,
+            "latestRiskLevel": supplier.latestRiskLevel,
+            "createdAt": supplier.createdAt.isoformat() if supplier.createdAt else None,
+            "updatedAt": supplier.updatedAt.isoformat() if supplier.updatedAt else None,
+        },
+        "riskSummary": risk_map.get(
+            supplier.name,
+            {"count": 0, "bySeverity": {}, "latest": None},
+        ),
+        "swarm": swarm_map.get(supplier.name),
+    }
+
+
+@router.put("/{id}")
+def update_supplier(
+    id: UUID,
+    body: SupplierUpdate,
+    db: Session = Depends(get_db),
+    oem: Oem = Depends(get_current_oem),
+):
+    data = {k: v for k, v in body.model_dump().items() if v is not None}
+    supplier = update_one(db, id, oem.id, data)
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    risk_map = get_risks_by_supplier(db)
+    swarm_map = get_swarm_summaries_by_supplier(db, oem.id)
+    return _format_supplier(supplier, risk_map, swarm_map)
+
+
+@router.delete("/{id}", status_code=204)
+def delete_supplier(
+    id: UUID,
+    db: Session = Depends(get_db),
+    oem: Oem = Depends(get_current_oem),
+):
+    deleted = delete_one(db, id, oem.id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Supplier not found")

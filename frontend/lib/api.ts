@@ -246,6 +246,15 @@ export async function fetchShipmentWeatherExposure(
   return res.json();
 }
 
+export interface SupplierUpdatePayload {
+  name?: string;
+  location?: string;
+  city?: string;
+  country?: string;
+  region?: string;
+  commodities?: string;
+}
+
 export const suppliersApi = {
   uploadCsv: (file: File) => {
     const formData = new FormData();
@@ -263,6 +272,9 @@ export const suppliersApi = {
   getAll: () => api.get<Supplier[]>("/suppliers").then((res) => res.data),
   getById: (id: string) =>
     api.get<Supplier | null>(`/suppliers/${id}`).then((res) => res.data),
+  update: (id: string, data: SupplierUpdatePayload) =>
+    api.put<Supplier>(`/suppliers/${id}`, data).then((res) => res.data),
+  delete: (id: string) => api.delete(`/suppliers/${id}`),
 };
 
 // Shipping Risk Intelligence (from hackathon POC)

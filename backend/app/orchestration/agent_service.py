@@ -647,18 +647,8 @@ async def _run_analysis_for_oem(
     await _broadcast_current_status(db, agent_status_id)
     route_params = {"routes": supplier_params["routes"]}
     route_data = await manager.fetch_by_types(["traffic", "shipping"], route_params)
-    # Run Shipment Agent (LangGraph + LangChain) on shipping data.
-    shipping_items = route_data.get("shipping") or []
-    shipping_data = {
-        "supplier_id": scope.get("supplierId") or "",
-        "supplier_name": scope.get("supplierName") or "",
-        "tracking_data": (
-            shipping_items[0].get("data") or {}
-            if shipping_items and isinstance(shipping_items[0], dict)
-            else {}
-        ),
-    }
-    shipping_result = await run_shipment_risk_graph(shipping_data, scope)
+    # Run Shipment Agent (LangGraph + LangChain) — it fetches tracking data itself.
+    shipping_result = await run_shipment_risk_graph(scope)
     logger.info(
         "_run_analysis_for_oem: shipping analysis score=%s for OEM %s",
         shipping_result.get("shipping_risk_score"),

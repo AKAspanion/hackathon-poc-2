@@ -2,11 +2,12 @@
 
 Single entry point:
 
-* ``run_shipment_risk_graph(shipping_data, scope)``
-    Parses Shiprocket-style tracking data, runs LLM analysis (with
-    heuristic fallback), and returns a ``ShippingRiskResult`` dict.
+* ``run_shipment_risk_graph(scope)``
+    Fetches tracking data from the mock server, parses it, runs LLM
+    analysis (with heuristic fallback), and returns a
+    ``ShippingRiskResult`` dict.
 
-Graph: build_metadata -> analyze_risk -> normalize_result -> END
+Graph: fetch_tracking -> build_metadata -> analyze_risk -> normalize_result -> END
 """
 
 from __future__ import annotations
@@ -16,9 +17,11 @@ import logging
 from datetime import datetime
 from typing import Any, TypedDict
 
+import httpx
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, StateGraph
 
+from app.config import settings
 from app.services.agent_orchestrator import _extract_json
 from app.services.agent_types import OemScope
 from app.services.langchain_llm import get_chat_model
@@ -126,6 +129,51 @@ def _get_risk_chain() -> Any | None:
 
 
 # ---------------------------------------------------------------------------
+# Tracking data fetch
+# ---------------------------------------------------------------------------
+
+SHIPMENT_TRACKING_COLLECTION = "shipment-tracking"
+
+
+async def _fetch_tracking_from_mock_server(
+    supplier_id: str,
+) -> list[dict[str, Any]]:
+    """Fetch shipment tracking records from the mock server for a supplier.
+
+    GET {mock_server_base_url}/mock/shipment-tracking?q=supplier_id:{supplier_id}
+    """
+    base_url = settings.mock_server_base_url
+    if not base_url or not supplier_id.strip():
+        logger.debug(
+            "mock_server_base_url not configured or supplier_id empty — "
+            "skipping tracking fetch"
+        )
+        return []
+
+    url = (
+        f"{base_url.rstrip('/')}/mock/{SHIPMENT_TRACKING_COLLECTION}"
+        f"?q=supplier_id:{supplier_id.strip()}"
+    )
+    logger.info("fetch_tracking — GET %s", url)
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+        payload = resp.json()
+        items = payload.get("items") or []
+        records = [item.get("data") or item for item in items]
+        logger.info(
+            "fetch_tracking — %d record(s) for supplier_id=%s",
+            len(records),
+            supplier_id,
+        )
+        return records
+    except Exception as exc:
+        logger.warning("fetch_tracking — error for supplier_id=%s: %s", supplier_id, exc)
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Graph state
 # ---------------------------------------------------------------------------
 
@@ -134,10 +182,61 @@ class ShipmentGraphState(TypedDict, total=False):
     """State for the shipment risk graph."""
 
     scope: OemScope  # OEM context for LLM
-    shipping_data: dict[str, Any]  # INPUT: Shiprocket-style tracking data
+    shipping_data: dict[str, Any]  # Built by fetch_tracking (or passed in)
     supplier_data: dict[str, Any]  # Set by build_metadata
     tracking_records: list[dict[str, Any]]  # Set by build_metadata
     shipping_risk_result: dict[str, Any]  # Set by analyze_risk / normalize
+
+
+# ---------------------------------------------------------------------------
+# Node: fetch_tracking
+# ---------------------------------------------------------------------------
+
+
+async def _fetch_tracking_node(state: ShipmentGraphState) -> dict[str, Any]:
+    """Fetch tracking data from the mock server using supplier info in scope.
+
+    Populates ``shipping_data`` with supplier id/name and raw tracking data
+    so that downstream ``build_metadata`` can parse it.
+    """
+    scope = state.get("scope") or {}
+    supplier_id = str(scope.get("supplierId") or "").strip()
+    supplier_name = scope.get("supplierName") or ""
+
+    if not supplier_id:
+        logger.warning("fetch_tracking — no supplierId in scope, skipping fetch")
+        return {
+            "shipping_data": {
+                "supplier_id": "",
+                "supplier_name": supplier_name,
+                "tracking_data": {},
+            }
+        }
+
+    records = await _fetch_tracking_from_mock_server(supplier_id)
+
+    # The mock server returns a list of tracking record dicts.  Use the first
+    # record's tracking_data (Shiprocket format) if available.
+    tracking_data: dict[str, Any] = {}
+    if records:
+        first = records[0]
+        if isinstance(first, dict):
+            tracking_data = first.get("tracking_data") or first
+
+    logger.info(
+        "fetch_tracking — supplier=%s (%s), got %d record(s)",
+        supplier_name,
+        supplier_id,
+        len(records),
+    )
+
+    return {
+        "shipping_data": {
+            "supplier_id": supplier_id,
+            "supplier_name": supplier_name,
+            "tracking_data": tracking_data,
+        }
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -437,10 +536,12 @@ def _normalize_result_node(state: ShipmentGraphState) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _builder = StateGraph(ShipmentGraphState)
+_builder.add_node("fetch_tracking", _fetch_tracking_node)
 _builder.add_node("build_metadata", _build_metadata_node)
 _builder.add_node("analyze_risk", _analyze_risk_node)
 _builder.add_node("normalize_result", _normalize_result_node)
-_builder.set_entry_point("build_metadata")
+_builder.set_entry_point("fetch_tracking")
+_builder.add_edge("fetch_tracking", "build_metadata")
 _builder.add_edge("build_metadata", "analyze_risk")
 _builder.add_edge("analyze_risk", "normalize_result")
 _builder.add_edge("normalize_result", END)
@@ -449,18 +550,19 @@ SHIPMENT_RISK_GRAPH = _builder.compile()
 
 
 async def run_shipment_risk_graph(
-    shipping_data: dict[str, Any],
     scope: OemScope,
 ) -> dict[str, Any]:
-    """Run shipment risk analysis on Shiprocket-style tracking data.
+    """Run shipment risk analysis for a supplier.
+
+    The graph fetches tracking data from the mock server automatically
+    using ``supplierId`` from *scope*, then analyses it for risk.
 
     Parameters
     ----------
-    shipping_data:
-        Dict with ``supplier_id``, ``supplier_name``, and ``tracking_data``
-        (containing ``etd``, ``shipment_track``, ``shipment_track_activities``).
     scope:
-        OEM context (oemId, oemName, locations, commodities) for the LLM.
+        OEM / supplier context.  Must include ``supplierId`` (and ideally
+        ``supplierName``) so that the ``fetch_tracking`` node can retrieve
+        shipment records from the mock server.
 
     Returns
     -------
@@ -480,7 +582,6 @@ async def run_shipment_risk_graph(
     """
     initial_state: ShipmentGraphState = {
         "scope": scope,
-        "shipping_data": shipping_data,
     }
     final_state = await SHIPMENT_RISK_GRAPH.ainvoke(initial_state)
     return final_state.get("shipping_risk_result") or dict(_FALLBACK_RESULT)
